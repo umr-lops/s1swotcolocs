@@ -368,6 +368,7 @@ def s1swot_core_tile_coloc(
         condensated_swot = create_empty_coloc_res(indexes_sar_grid=indexes_sar)
     return condensated_swot, cpt
 
+
 def get_swot_tree(dsswot):
     """
 
@@ -451,16 +452,14 @@ def loop_on_each_sar_tiles(
                 indexes_sar=i,
                 cpt=cpt,
             )
-            tile_swot_nadir_condensated_at_SAR_point, cpt = (
-                s1swot_core_tile_coloc(
-                    lontile,
-                    lattile,
-                    treeswot_nadir,
-                    radius_coloc,
-                    dsswot=dsswotl2_closenadir,
-                    indexes_sar=i,
-                    cpt=cpt,
-                )
+            tile_swot_nadir_condensated_at_SAR_point, cpt = s1swot_core_tile_coloc(
+                lontile,
+                lattile,
+                treeswot_nadir,
+                radius_coloc,
+                dsswot=dsswotl2_closenadir,
+                indexes_sar=i,
+                cpt=cpt,
             )
         else:
             cpt["tile_sar_with_corrupted_geolocation"] += 1
