@@ -23,6 +23,7 @@ dependencies = [
   "alphashape",
   "geoviews",
   "hvplot",
+  "s1ifr>=0.1.0",
   #  "s1ifr @ git+https://gitlab.ifremer.fr/lops-wave/s1ifr@main",
 ]
 
@@ -46,6 +47,11 @@ package-dir = { "" = "src" }
 packages = ["s1swotcolocs"]
 #[tool.setuptools.packages.find]
 #where = ["src"]  # Tell setuptools to look for packages inside the 'src' directory
+
+[tool.pip]
+extra-index-url = [
+    "https://gitlab.ifremer.fr/api/v4/projects/14657/packages/pypi/simple"
+]
 
 [tool.setuptools_scm]
 fallback_version = "999"
