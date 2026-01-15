@@ -32,13 +32,13 @@ You can either clone the public repository:
 
 .. code-block:: console
 
-    $ git clone git://github.com/agrouaze/s1swotcolocs
+    $ git clone git://github.com/umr-lops/s1swotcolocs
 
 Or download the `tarball`_:
 
 .. code-block:: console
 
-    $ curl -OJL https://github.com/agrouaze/s1swotcolocs/tarball/master
+    $ curl -OJL https://github.com/umr-lops/s1swotcolocs/tarball/master
 
 Once you have a copy of the source, you can install it with:
 
@@ -47,5 +47,5 @@ Once you have a copy of the source, you can install it with:
     $ python setup.py install
 
 
-.. _Github repo: https://github.com/agrouaze/s1swotcolocs
-.. _tarball: https://github.com/agrouaze/s1swotcolocs/tarball/master
+.. _Github repo: https://github.com/umr-lops/s1swotcolocs
+.. _tarball: https://github.com/umr-lops/s1swotcolocs/tarball/master

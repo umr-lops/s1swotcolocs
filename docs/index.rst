@@ -5,10 +5,10 @@ Welcome to s1swotcolocs's documentation!
    :maxdepth: 2
    :caption: Contents:
 
-   readme
    installation
    usage
    notebooks/illustration_seastate_coloc
+   notebooks/methodology_coloc
    api
    contributing
    authors

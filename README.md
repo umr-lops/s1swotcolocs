@@ -1,9 +1,9 @@
 # s1swotcolocs
 
 [![PyPI version](https://img.shields.io/pypi/v/s1swotcolocs.svg)](https://pypi.python.org/pypi/s1swotcolocs)
-[![Build Status](https://img.shields.io/travis/agrouaze/s1swotcolocs.svg)](https://travis-ci.com/agrouaze/s1swotcolocs)
+[![Build Status](https://img.shields.io/travis/umr-lops/s1swotcolocs.svg)](https://travis-ci.com/umr-lops/s1swotcolocs)
 [![Documentation Status](https://readthedocs.org/projects/s1swotcolocs/badge/?version=latest)](https://s1swotcolocs.readthedocs.io/en/latest/?version=latest)
-[![Updates](https://pyup.io/repos/github/agrouaze/s1swotcolocs/shield.svg)](https://pyup.io/repos/github/agrouaze/s1swotcolocs/)
+[![Updates](https://pyup.io/repos/github/umr-lops/s1swotcolocs/shield.svg)](https://pyup.io/repos/github/umr-lops/s1swotcolocs/)
 
 Python lib to create co-locations between Sentinel-1 IW or EW images and SWOT KaRin swath.
 
