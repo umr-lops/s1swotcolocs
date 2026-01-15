@@ -23,7 +23,7 @@ dependencies = [
   "alphashape",
   "geoviews",
   "hvplot",
-  "s1ifr>=0.1.0",
+  "s1ifr",
   #  "s1ifr @ git+https://gitlab.ifremer.fr/lops-wave/s1ifr@main",
 ]
 
