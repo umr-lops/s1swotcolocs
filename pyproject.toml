@@ -62,6 +62,7 @@ coloc_SWOT_L3_with_S1_CDSE_TOPS_sequential_wrapper = "s1swotcolocs.coloc_SWOT_L3
 coloc_SWOT_L3_with_S1_CDSE_TOPS_sequentiel = "s1swotcolocs.coloc_SWOT_L3_with_S1_CDSE_TOPS_sequentiel:main"
 coloc_seastate_SWOT_S1 = "s1swotcolocs.seastate_colocs_s1_swot:main"
 coloc_seastate_SWOT_S1_sequential = "s1swotcolocs.seastate_colocs_s1_swot_sequential:main"
+download_l2_swot_karin_lr_ssh_windwave_cnes = "s1swotcolocs.scripts.download_l2_swot_karin_lr_ssh_windwave_cnes:main"
 
 [tool.ruff.lint]
 ignore = [
