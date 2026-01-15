@@ -29,3 +29,5 @@ dependencies:
     - alphashape
     - geoviews
     - hvplot
+    - pip:
+        - s1ifr>=0.1.0
