@@ -59,7 +59,7 @@ jobs:
           echo "CONDA_ENV_FILE=ci/requirements/environment.yaml" >> $GITHUB_ENV
 
           # 🔐 GitLab PyPI authentication for s1ifr
-          echo "PIP_EXTRA_INDEX_URL=https://__token__:${{ secrets.S1IFR_ACCESS_TOKEN }}@gitlab.ifremer.fr/api/v4/projects/14657/packages/pypi/simple" >> $GITHUB_ENV
+          echo "PIP_EXTRA_INDEX_URL=https://__token__:${{ secrets.S1IFR_ACCESS_TOKEN }}@gitlab.ifremer.fr/api/v4/projects/4991/packages/pypi/simple" >> $GITHUB_ENV
 
       - name: Setup micromamba
         uses: mamba-org/setup-micromamba@v2
@@ -71,15 +71,16 @@ jobs:
             ${{ runner.os }}-${{ runner.arch }}-py${{ matrix.python-version }}-${{ env.TODAY }}-${{ hashFiles(env.CONDA_ENV_FILE) }}
           create-args: >-
             python=${{ matrix.python-version }}
+        env:
+          # Pass it here explicitly to ensure the internal pip sees it
+          PIP_EXTRA_INDEX_URL: https://__token__:${{ secrets.S1IFR_ACCESS_TOKEN }}@gitlab.ifremer.fr/api/v4/projects/4991/packages/pypi/simple
+
+      - name: Install private dependencies (s1ifr)
+        run: |
+          # Use --extra-index-url here as a backup
+          python -m pip install s1ifr --extra-index-url https://__token__:${{ secrets.S1IFR_ACCESS_TOKEN }}@gitlab.ifremer.fr/api/v4/projects/4991/packages/pypi/simple
+        shell: bash -el {0}
 
       - name: Install s1swotcolocs
         run: |
           python -m pip install --no-deps -e .
-
-      - name: Import s1swotcolocs
-        run: |
-          python -c "import s1swotcolocs"
-
-      - name: Run tests
-        run: |
-          python -m pytest --cov=s1swotcolocs

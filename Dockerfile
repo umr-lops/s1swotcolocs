@@ -12,29 +12,25 @@ RUN apt-get update && apt-get install -y curl bzip2 ca-certificates && \
 
 
 # ---- Stage 2: The Builder ----
-# This stage will use the secret to build the complete conda environment.
-# This stage will be discarded and is not part of the final image.
 FROM micromamba-base as builder
 
-# --- THIS IS THE CRUCIAL STEP ---
-# Declare the build argument that will receive the secret.
-ARG GITLAB_CREDS
-
-# Install system dependencies needed for building packages (like git)
-RUN apt-get update && apt-get install -y git && \
-    apt-get clean && rm -rf /var/lib/apt/lists/*
+# Receive the CI_JOB_TOKEN directly
+ARG CI_JOB_TOKEN
 
 # Copy your environment file
 COPY environment.yml /tmp/environment.yml
 
-# Create the base environment from your file
+# Create the base environment
 RUN micromamba create -y -n myenv -f /tmp/environment.yml && \
     micromamba clean -a -y
 
-# Now, activate the environment and install the private package using the secret.
-# The `micromamba run` command executes the command within the specified environment.
-# This is where the secret is actually used.
-RUN micromamba run -n myenv pip install git+https://${GITLAB_CREDS}@gitlab.ifremer.fr/lops-wave/s1ifr.git
+# Install s1ifr using the registry URL
+# We use --no-cache-dir to keep the image small
+# We use --extra-index-url to allow pip to look at standard PyPI AND your private GitLab
+RUN micromamba run -n myenv pip install s1ifr \
+    --no-cache-dir \
+    --extra-index-url https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.ifremer.fr/api/v4/projects/4991/packages/pypi/simple
+
 
 
 # ---- Stage 3: The Final Image ----
