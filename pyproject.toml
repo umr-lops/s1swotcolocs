@@ -20,6 +20,7 @@ dependencies = [
   "geodatasets",
   "cdsodatacli",
   "h5netcdf",
+  "netcdf4",
   "alphashape",
   "geoviews",
   "hvplot",
