@@ -218,10 +218,7 @@ def test_save_sea_state_coloc_file(tmp_path):
 
     # FIX: Add coordinates to the dimension 'dim'
     # This prevents the H5DSis_scale error in h5netcdf
-    ds_to_save = xr.Dataset(
-        {"data": (("dim",), [1, 2, 3])},
-        coords={"dim": [0, 1, 2]} 
-    )
+    ds_to_save = xr.Dataset({"data": (("dim",), [1, 2, 3])}, coords={"dim": [0, 1, 2]})
 
     # Run the function
     s1_coloc.save_sea_state_coloc_file(ds_to_save, str(output_path), cpt)

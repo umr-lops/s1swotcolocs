@@ -509,13 +509,13 @@ def save_sea_state_coloc_file(colocds, fpath_out, cpt):
     else:
         app_logger.debug("file does not exist -> brand-new file on disk")
         cpt["new_file"] += 1
-        
+
     if not os.path.exists(os.path.dirname(fpath_out)):
         os.makedirs(os.path.dirname(fpath_out), mode=0o775, exist_ok=True)
-    
+
     # CHANGE: Use engine="netcdf4" instead of "h5netcdf"
     colocds.to_netcdf(fpath_out, engine="netcdf4")
-    
+
     os.chmod(fpath_out, 0o664)
     app_logger.info("coloc file created : %s", fpath_out)
     return cpt

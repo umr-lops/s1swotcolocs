@@ -30,4 +30,4 @@ dependencies:
     - geoviews
     - hvplot
     - pip:
-        - s1ifr
+          - s1ifr

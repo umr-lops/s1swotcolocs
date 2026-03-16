@@ -51,7 +51,7 @@ packages = ["s1swotcolocs"]
 
 [tool.pip]
 extra-index-url = [
-    "https://gitlab.ifremer.fr/api/v4/projects/14657/packages/pypi/simple"
+  "https://gitlab.ifremer.fr/api/v4/projects/14657/packages/pypi/simple",
 ]
 
 [tool.setuptools_scm]
