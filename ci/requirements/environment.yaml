@@ -29,3 +29,4 @@ dependencies:
     - alphashape
     - geoviews
     - hvplot
+    - netcdf4

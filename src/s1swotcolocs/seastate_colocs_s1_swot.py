@@ -368,6 +368,7 @@ def s1swot_core_tile_coloc(
         condensated_swot = create_empty_coloc_res(indexes_sar_grid=indexes_sar)
     return condensated_swot, cpt
 
+
 def get_swot_tree(dsswot):
     """
 
@@ -451,16 +452,14 @@ def loop_on_each_sar_tiles(
                 indexes_sar=i,
                 cpt=cpt,
             )
-            tile_swot_nadir_condensated_at_SAR_point, cpt = (
-                s1swot_core_tile_coloc(
-                    lontile,
-                    lattile,
-                    treeswot_nadir,
-                    radius_coloc,
-                    dsswot=dsswotl2_closenadir,
-                    indexes_sar=i,
-                    cpt=cpt,
-                )
+            tile_swot_nadir_condensated_at_SAR_point, cpt = s1swot_core_tile_coloc(
+                lontile,
+                lattile,
+                treeswot_nadir,
+                radius_coloc,
+                dsswot=dsswotl2_closenadir,
+                indexes_sar=i,
+                cpt=cpt,
             )
         else:
             cpt["tile_sar_with_corrupted_geolocation"] += 1
@@ -501,11 +500,7 @@ def loop_on_each_sar_tiles(
 
 def save_sea_state_coloc_file(colocds, fpath_out, cpt):
     """
-
-    :param colocds:
-    :param fpath_out:
-    :param cpt:
-    :return:
+    Saves the dataset using the netcdf4 engine to avoid H5DSis_scale errors.
     """
     if os.path.exists(fpath_out):
         app_logger.info("remove the existing file")
@@ -514,9 +509,13 @@ def save_sea_state_coloc_file(colocds, fpath_out, cpt):
     else:
         app_logger.debug("file does not exist -> brand-new file on disk")
         cpt["new_file"] += 1
+
     if not os.path.exists(os.path.dirname(fpath_out)):
-        os.makedirs(os.path.dirname(fpath_out), mode=0o775)
-    colocds.to_netcdf(fpath_out, engine="h5netcdf")
+        os.makedirs(os.path.dirname(fpath_out), mode=0o775, exist_ok=True)
+
+    # CHANGE: Use engine="netcdf4" instead of "h5netcdf"
+    colocds.to_netcdf(fpath_out, engine="netcdf4")
+
     os.chmod(fpath_out, 0o664)
     app_logger.info("coloc file created : %s", fpath_out)
     return cpt

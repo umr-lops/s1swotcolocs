@@ -20,9 +20,12 @@ dependencies = [
   "geodatasets",
   "cdsodatacli",
   "h5netcdf",
+  "netcdf4",
   "alphashape",
   "geoviews",
+  "paramiko",
   "hvplot",
+  "s1ifr",
   #  "s1ifr @ git+https://gitlab.ifremer.fr/lops-wave/s1ifr@main",
 ]
 
@@ -47,6 +50,11 @@ packages = ["s1swotcolocs"]
 #[tool.setuptools.packages.find]
 #where = ["src"]  # Tell setuptools to look for packages inside the 'src' directory
 
+[tool.pip]
+extra-index-url = [
+  "https://gitlab.ifremer.fr/api/v4/projects/4991/packages/pypi/simple",
+]
+
 [tool.setuptools_scm]
 fallback_version = "999"
 
@@ -62,6 +70,7 @@ coloc_SWOT_L3_with_S1_CDSE_TOPS_sequential_wrapper = "s1swotcolocs.coloc_SWOT_L3
 coloc_SWOT_L3_with_S1_CDSE_TOPS_sequentiel = "s1swotcolocs.coloc_SWOT_L3_with_S1_CDSE_TOPS_sequentiel:main"
 coloc_seastate_SWOT_S1 = "s1swotcolocs.seastate_colocs_s1_swot:main"
 coloc_seastate_SWOT_S1_sequential = "s1swotcolocs.seastate_colocs_s1_swot_sequential:main"
+download_l2_swot_karin_lr_ssh_windwave_cnes = "s1swotcolocs.download_l2_swot_karin_lr_ssh_windwave_cnes:main"
 
 [tool.ruff.lint]
 ignore = [

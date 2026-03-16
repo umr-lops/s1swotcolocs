@@ -36,7 +36,7 @@ jobs:
 
         if: |
             always()
-            && github.repository == 'agrouaze/s1swotcolocs'
+            && github.repository == 'umr-lops/s1swotcolocs'
             && (
               github.event_name == 'schedule'
               || github.event_name == 'workflow_dispatch'
