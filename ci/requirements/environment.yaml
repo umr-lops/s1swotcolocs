@@ -29,5 +29,4 @@ dependencies:
     - alphashape
     - geoviews
     - hvplot
-    - pip:
-          - s1ifr
+    - netcdf4
