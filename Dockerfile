@@ -29,7 +29,8 @@ RUN micromamba create -y -n myenv -f /tmp/environment.yml && \
 # We use --extra-index-url to allow pip to look at standard PyPI AND your private GitLab
 RUN micromamba run -n myenv pip install s1ifr \
     --no-cache-dir \
-    --extra-index-url https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.ifremer.fr/api/v4/projects/4991/packages/pypi/simple
+    --extra-index-url https://__token__:${CI_JOB_TOKEN}@gitlab.ifremer.fr/api/v4/projects/4991/packages/pypi/simple
+    # --extra-index-url https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.ifremer.fr/api/v4/projects/4991/packages/pypi/simple
 
 
 
