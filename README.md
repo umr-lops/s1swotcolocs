@@ -49,5 +49,4 @@ For triple co-location (KaRin ,SWOT-nadir, IW Level-2 WAV) purposes it oculd be 
 
 ![coloc_swot_iw](docs/_static/figures/illustrate_coloc_s1_swot_iw_nadir.png)
 
-
 # new feature to come: WV / SWOT KaRin co-locations
