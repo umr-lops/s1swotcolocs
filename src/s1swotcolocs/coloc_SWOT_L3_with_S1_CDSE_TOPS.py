@@ -527,6 +527,7 @@ def parse_args():
         required=True,
         help="directory where to store output netCDF files",
     )
+    parser.add_argument("--conf", required=True, help="config file to use")
     args = parser.parse_args()
     return args
 
@@ -544,13 +545,14 @@ def treat_one_day_wrapper(day2treat, outputdir, mode, confpath, disable_tqdm=Fal
     conf = get_conf_content(confpath)
     # MAX_AREA_SIZE: 200
     # DELTA_HOURS: 1
-    dswot = conf["SWOT_L3_AVISO_DIR"]
+    dswot = conf["SWOT_L2_AVISO_DIR"]
     CACHE_CDSE = conf["CACHE_CDSE"]
     lstswotfiles = []
     dd = datetime.datetime.strptime(day2treat, "%Y%m%d")
     app_logger.info("treat day : %s", dd)
-    jj = dd.strftime("%j")
-    lstswotfiles += glob.glob(os.path.join(dswot, dd.strftime("%Y"), jj, "*nc"))
+    pattern = os.path.join(dswot, "*nc")
+    app_logger.info("pattern : %s", pattern)
+    lstswotfiles += glob.glob(pattern)
     app_logger.info("Nb files SWOT found : %i", len(lstswotfiles))
     app_logger.info(
         "first step: creation of SWOT geodataframes with +/-%i hours shift vs S-1",
@@ -653,7 +655,10 @@ def main():
     #     # Supprime tous les handlers qui pourraient afficher les logs
     #     logger.handlers.clear()
     cpt = treat_one_day_wrapper(
-        day2treat=args.day2treat, outputdir=args.outputdir, mode=args.mode
+        day2treat=args.day2treat,
+        outputdir=args.outputdir,
+        mode=args.mode,
+        confpath=args.conf,
     )
     for uu in cpt:
         logging.info(
