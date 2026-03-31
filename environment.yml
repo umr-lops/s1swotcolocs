@@ -20,3 +20,4 @@ dependencies:
     - paramiko
     - alphashape
     - pystac
+    - pystac-client

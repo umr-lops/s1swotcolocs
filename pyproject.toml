@@ -27,6 +27,7 @@ dependencies = [
   "hvplot",
   "s1ifr",
   "pystac",
+  "pystac-client",
   #  "s1ifr @ git+https://gitlab.ifremer.fr/lops-wave/s1ifr@main",
 ]
 

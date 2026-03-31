@@ -31,3 +31,4 @@ dependencies:
     - hvplot
     - netcdf4
     - pystac
+    - pystac-client
