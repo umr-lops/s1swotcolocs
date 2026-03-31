@@ -13,6 +13,14 @@ fi
 BASE_IMAGE_NAME="s1swot"
 REGISTRY_IMAGE_NAME="gitlab-registry.ifremer.fr/lops-wave/s1ifr:s1swot"
 
+# get CI_JOB_TOKEN from environment variable
+CI_JOB_TOKEN=${CI_JOB_TOKEN:-}
+# test if CI_JOB_TOKEN is set and not empty
+if [ -n "$CI_JOB_TOKEN" ]; then
+    echo "Variable CI_JOB_TOKEN is set and not empty."
+else
+    echo "Variable CI_JOB_TOKEN is not set or is empty."
+fi
 
 # if [ -n "$TOKENGITLAB" ]; then
 #     echo "Variable TOKENGITLAB is set and not empty."
@@ -22,7 +30,7 @@ REGISTRY_IMAGE_NAME="gitlab-registry.ifremer.fr/lops-wave/s1ifr:s1swot"
 # Docker commands
 echo "Building Docker image: ${BASE_IMAGE_NAME}:${VERSION}"
 #docker build . --no-cache --build-arg GITLAB_CREDS=$(cat gitlab_creds) -t "${BASE_IMAGE_NAME}:${VERSION}"
-docker build . --no-cache --build-arg GITLAB_CREDS=$(cat gitlab_creds) -t "${BASE_IMAGE_NAME}:${VERSION}"
+docker build . --no-cache --build-arg GITLAB_CREDS=$(cat gitlab_creds) --build-arg CI_JOB_TOKEN=$CI_JOB_TOKEN -t "${BASE_IMAGE_NAME}:${VERSION}"
 
 echo "Tagging Docker image: ${BASE_IMAGE_NAME}:${VERSION} -> ${REGISTRY_IMAGE_NAME}-${VERSION}"
 docker tag "${BASE_IMAGE_NAME}:${VERSION}" "${REGISTRY_IMAGE_NAME}-${VERSION}"

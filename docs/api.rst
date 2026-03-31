@@ -23,10 +23,18 @@ Utilities
     :undoc-members:
     :show-inheritance:
 
-Colocation Logic
+Matchups Logic
 ----------------
 
 .. automodule:: s1swotcolocs.coloc_SWOT_L3_with_S1_CDSE_TOPS
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
+NC - STAC conversion
+--------------------
+
+.. automodule:: s1swotcolocs.convert_matchups_nc_to_stac
     :members:
     :undoc-members:
     :show-inheritance:
