@@ -26,6 +26,7 @@ dependencies = [
   "paramiko",
   "hvplot",
   "s1ifr",
+  "pystac",
   #  "s1ifr @ git+https://gitlab.ifremer.fr/lops-wave/s1ifr@main",
 ]
 
