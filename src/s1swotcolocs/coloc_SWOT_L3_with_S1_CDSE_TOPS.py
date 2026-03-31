@@ -441,6 +441,34 @@ def save_netcdf_file_per_swot_piece_orbit_core(
     app_logger.info("coloc file created : %s", fpath_out)
     return cpt
 
+def get_swot_date_info(SWOT_start_piece):
+    """
+    
+    Arguments:
+        SWOT_start_piece (np.datetime64):
+
+    Returns:
+        swot_formated_date (str): eg 20251017T151210
+        year (int): 
+        month (str): MM
+        day (str): DD
+    """
+    dt_py = SWOT_start_piece.astype("M8[D]").astype(object)
+
+    # Extract year, month, day
+    year = dt_py.year
+    month = f"{dt_py.month:02d}"
+    day = f"{dt_py.day:02d}"
+    # year = SWOT_start_piece.astype('datetime64[Y]').astype(int) + 1970
+    # month = SWOT_start_piece.astype('datetime64[M]').astype(int) % 12 + 1
+    # day = SWOT_start_piece - SWOT_start_piece.astype('datetime64[M]') + 1
+    swot_formated_date = (
+        ("%s" % SWOT_start_piece)
+        .replace("-", "")
+        .replace(":", "")
+        .split(".")[0]
+    )
+    return swot_formated_date,year,month,day
 
 def save_meta_coloc_output(
     cddesS1outputs, SWOTgdfs, dir_output, delta_t_max, cpt, disable_tqdm=False
@@ -467,21 +495,7 @@ def save_meta_coloc_output(
 
         if one_cds_output is not None:
             SWOT_start_piece = np.datetime64(swot_gdf["id_query"][0].split(" ")[2])
-            dt_py = SWOT_start_piece.astype("M8[D]").astype(object)
-
-            # Extract year, month, day
-            year = dt_py.year
-            month = f"{dt_py.month:02d}"
-            day = f"{dt_py.day:02d}"
-            # year = SWOT_start_piece.astype('datetime64[Y]').astype(int) + 1970
-            # month = SWOT_start_piece.astype('datetime64[M]').astype(int) % 12 + 1
-            # day = SWOT_start_piece - SWOT_start_piece.astype('datetime64[M]') + 1
-            swot_formated_date = (
-                ("%s" % SWOT_start_piece)
-                .replace("-", "")
-                .replace(":", "")
-                .split(".")[0]
-            )
+            swot_formated_date,year,month,day = get_swot_date_info(SWOT_start_piece)
             fpath_out = os.path.join(
                 dir_output,
                 "%s" % year,
