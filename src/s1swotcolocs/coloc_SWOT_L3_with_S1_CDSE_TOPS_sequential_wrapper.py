@@ -94,6 +94,8 @@ def main():
         description="Wrapper script to run S1/SWOT collocation.",
         formatter_class=argparse.RawTextHelpFormatter,
     )
+    parser.add_argument('--singularity-img',
+                        help='path to the singularity image to use',required=True)
     parser.add_argument(
         "--startdate",
         type=str,
@@ -118,8 +120,10 @@ def main():
     stream = open(args.confpath, "r")
     conf = load(stream, Loader=Loader)
     # --- Configuration ---
-    DOCKER_BINARY_PATH = conf["DOCKER_BINARY_PATH"]
-    DOCKER_IMAGE = conf["DOCKER_IMAGE"]
+    APPTAINER_IMAGE = args.singularity_img
+    # DOCKER_BINARY_PATH = conf["DOCKER_BINARY_PATH"]
+    APPTAINER_BINARY_PATH = conf['APPTAINER_BINARY_PATH']
+    # DOCKER_IMAGE = conf["DOCKER_IMAGE"]
     HOST_DATAWORK = conf["HOST_DATAWORK"]
     HOST_SOURCES_DIR = conf["HOST_SOURCES_DIR"]
     HOST_SOURCES_DATA = conf["HOST_SOURCES_DATA"]
@@ -147,28 +151,51 @@ def main():
     logging.info(f"Will run container as user spec (UID:GID): {user_spec}")
 
     # --- Step 1: Pull Docker Image ---
-    pull_command = [DOCKER_BINARY_PATH, "pull", DOCKER_IMAGE]
-    run_command(pull_command, f"Pull Docker image '{DOCKER_IMAGE}'")
+    # pull_command = [DOCKER_BINARY_PATH, "pull", DOCKER_IMAGE]
+    # run_command(pull_command, f"Pull Docker image '{DOCKER_IMAGE}'")
 
     # --- Step 2: Run Collocation Script in Container ---
-    docker_run_command = [
-        DOCKER_BINARY_PATH,
+    # docker_run_command = [
+    #     APPTAINER_BINARY_PATH,
+    #     "run",
+    #     "--rm",
+    #     "--user",
+    #     user_spec,  # <--- NEW: Add the --user flag
+    #     "-e",
+    #     "HOME=/tmp",
+    #     "-v",
+    #     f"{HOST_SOURCES_DIR}:{HOST_SOURCES_DIR}",
+    #     "-v",
+    #     f"{HOST_DATAWORK}:{HOST_DATAWORK}",
+    #     "-v",
+    #     f"{HOST_SOURCES_DATA}:{HOST_SOURCES_DATA}",
+    #     "-v",
+    #     f"{HOST_OUTPUT_DIR}:{HOST_OUTPUT_DIR}",
+    #     DOCKER_IMAGE,
+    #     # "python", "-u", CONTAINER_SCRIPT_PATH,
+    #     CONTAINER_SCRIPT_PATH,
+    #     "--startdate",
+    #     start_date,
+    #     "--stopdate",
+    #     stop_date,
+    #     "--outputdir",
+    #     HOST_OUTPUT_DIR,
+    #     "--confpath",
+    #     args.confpath,
+    # ]
+
+    apptainer_run_command = [
+        APPTAINER_BINARY_PATH,
         "run",
-        "--rm",
-        "--user",
-        user_spec,  # <--- NEW: Add the --user flag
-        "-e",
-        "HOME=/tmp",
-        "-v",
-        f"{HOST_SOURCES_DIR}:{HOST_SOURCES_DIR}",
-        "-v",
-        f"{HOST_DATAWORK}:{HOST_DATAWORK}",
-        "-v",
-        f"{HOST_SOURCES_DATA}:{HOST_SOURCES_DATA}",
-        "-v",
-        f"{HOST_OUTPUT_DIR}:{HOST_OUTPUT_DIR}",
-        DOCKER_IMAGE,
-        # "python", "-u", CONTAINER_SCRIPT_PATH,
+        "-B",
+        f"{HOST_SOURCES_DIR}",
+        "-B",
+        f"{HOST_DATAWORK}",
+        "-B",
+        f"{HOST_SOURCES_DATA}",
+        "-B",
+        f"{HOST_OUTPUT_DIR}",
+        APPTAINER_IMAGE,
         CONTAINER_SCRIPT_PATH,
         "--startdate",
         start_date,
@@ -179,7 +206,7 @@ def main():
         "--confpath",
         args.confpath,
     ]
-    stream_command(docker_run_command, "Execute collocation script in a new container")
+    stream_command(apptainer_run_command, "Execute collocation script in a new container")
 
     logging.info("🎉 All steps completed successfully. Script finished.")
     logging.info("Recall output directory: %s", HOST_OUTPUT_DIR)
