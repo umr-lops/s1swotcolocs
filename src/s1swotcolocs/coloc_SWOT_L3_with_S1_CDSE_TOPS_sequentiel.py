@@ -30,6 +30,7 @@ def setup_logging(log_level=logging.INFO):
 
     return logging.getLogger(__name__)
 
+
 def silence_verbose_libs():
     """Silence libraries that are too verbose."""
     for logger_name in ["cdsodatacli", "cdsodatacli.query"]:
@@ -38,6 +39,7 @@ def silence_verbose_libs():
         lib_logger.addHandler(logging.NullHandler())
         lib_logger.propagate = False  # critical: prevents bubbling up to root
         lib_logger.setLevel(logging.CRITICAL + 1)
+
 
 def parse_yyyymmdd(s):
     # logging.debug('s = %s',s)

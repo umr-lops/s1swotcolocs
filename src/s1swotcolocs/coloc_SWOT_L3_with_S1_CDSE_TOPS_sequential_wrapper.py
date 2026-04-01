@@ -94,8 +94,9 @@ def main():
         description="Wrapper script to run S1/SWOT collocation.",
         formatter_class=argparse.RawTextHelpFormatter,
     )
-    parser.add_argument('--singularity-img',
-                        help='path to the singularity image to use',required=True)
+    parser.add_argument(
+        "--singularity-img", help="path to the singularity image to use", required=True
+    )
     parser.add_argument(
         "--startdate",
         type=str,
@@ -122,7 +123,7 @@ def main():
     # --- Configuration ---
     APPTAINER_IMAGE = args.singularity_img
     # DOCKER_BINARY_PATH = conf["DOCKER_BINARY_PATH"]
-    APPTAINER_BINARY_PATH = conf['APPTAINER_BINARY_PATH']
+    APPTAINER_BINARY_PATH = conf["APPTAINER_BINARY_PATH"]
     # DOCKER_IMAGE = conf["DOCKER_IMAGE"]
     HOST_DATAWORK = conf["HOST_DATAWORK"]
     HOST_SOURCES_DIR = conf["HOST_SOURCES_DIR"]
@@ -206,7 +207,9 @@ def main():
         "--confpath",
         args.confpath,
     ]
-    stream_command(apptainer_run_command, "Execute collocation script in a new container")
+    stream_command(
+        apptainer_run_command, "Execute collocation script in a new container"
+    )
 
     logging.info("🎉 All steps completed successfully. Script finished.")
     logging.info("Recall output directory: %s", HOST_OUTPUT_DIR)
