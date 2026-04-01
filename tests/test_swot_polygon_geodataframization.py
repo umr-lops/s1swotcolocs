@@ -5,6 +5,7 @@ import xarray as xr
 from shapely.geometry import Polygon
 import geopandas as gpd
 import logging
+from collections import defaultdict
 
 # Assuming the function is in this path, adjust if necessary
 from s1swotcolocs.coloc_SWOT_L3_with_S1_CDSE_TOPS import (
@@ -64,9 +65,10 @@ class TestTreatACleanPieceOfSwotOrbit(unittest.TestCase):
         mode = "IW"
         producttype = "SLC"
         delta_t_max = np.timedelta64(1, "h")
-
-        result_gdf = treat_a_clean_piece_of_swot_orbit(
-            swotpiece, points_for_kdtree, onedsswot, mode, producttype, delta_t_max
+        cpt = defaultdict(int)
+        result_gdf,cpt = treat_a_clean_piece_of_swot_orbit(
+            swotpiece, points_for_kdtree, onedsswot, mode, producttype, delta_t_max,
+            cpt=cpt
         )
 
         self.assertIsInstance(result_gdf, gpd.GeoDataFrame)
@@ -122,9 +124,10 @@ class TestTreatACleanPieceOfSwotOrbit(unittest.TestCase):
         mode = "EW"
         producttype = "GRD"
         delta_t_max = np.timedelta64(30, "m")  # 30 minutes
-
-        result_gdf = treat_a_clean_piece_of_swot_orbit(
-            swotpiece, points_for_kdtree, onedsswot, mode, producttype, delta_t_max
+        cpt = defaultdict(int)
+        result_gdf,cpt = treat_a_clean_piece_of_swot_orbit(
+            swotpiece, points_for_kdtree, onedsswot, mode, producttype, delta_t_max,
+            cpt=cpt
         )
 
         self.assertIsInstance(result_gdf, gpd.GeoDataFrame)
