@@ -66,9 +66,14 @@ class TestTreatACleanPieceOfSwotOrbit(unittest.TestCase):
         producttype = "SLC"
         delta_t_max = np.timedelta64(1, "h")
         cpt = defaultdict(int)
-        result_gdf,cpt = treat_a_clean_piece_of_swot_orbit(
-            swotpiece, points_for_kdtree, onedsswot, mode, producttype, delta_t_max,
-            cpt=cpt
+        result_gdf, cpt = treat_a_clean_piece_of_swot_orbit(
+            swotpiece,
+            points_for_kdtree,
+            onedsswot,
+            mode,
+            producttype,
+            delta_t_max,
+            cpt=cpt,
         )
 
         self.assertIsInstance(result_gdf, gpd.GeoDataFrame)
@@ -125,9 +130,14 @@ class TestTreatACleanPieceOfSwotOrbit(unittest.TestCase):
         producttype = "GRD"
         delta_t_max = np.timedelta64(30, "m")  # 30 minutes
         cpt = defaultdict(int)
-        result_gdf,cpt = treat_a_clean_piece_of_swot_orbit(
-            swotpiece, points_for_kdtree, onedsswot, mode, producttype, delta_t_max,
-            cpt=cpt
+        result_gdf, cpt = treat_a_clean_piece_of_swot_orbit(
+            swotpiece,
+            points_for_kdtree,
+            onedsswot,
+            mode,
+            producttype,
+            delta_t_max,
+            cpt=cpt,
         )
 
         self.assertIsInstance(result_gdf, gpd.GeoDataFrame)
