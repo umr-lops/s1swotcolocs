@@ -14,38 +14,31 @@ import datetime
 
 
 def setup_logging(log_level=logging.INFO):
-    """
-    Sets up a standardized logger.
+    root_logger = logging.getLogger()
+    root_logger.setLevel(log_level)
 
-    Args:
-        log_level (int): The minimum level of messages to log.
-                         Example: logging.DEBUG, logging.INFO, logging.WARNING.
-    """
-    # Get a logger for this specific module (__name__)
-    logger = logging.getLogger(__name__)
-    logger.setLevel(log_level)
+    # avoid duplicate handlers if called multiple times
+    if not root_logger.handlers:
+        handler = logging.StreamHandler(sys.stdout)
+        handler.setLevel(log_level)
+        formatter = logging.Formatter(
+            "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        )
+        handler.setFormatter(formatter)
+        root_logger.addHandler(handler)
 
-    # If handlers are already configured, don't add them again
-    if logger.hasHandlers():
-        logger.handlers.clear()
+    return logging.getLogger(__name__)
 
-    # Create a handler to write logs to the console (standard error)
-    handler = logging.StreamHandler(sys.stdout)  # or sys.stderr
-    handler.setLevel(log_level)
 
-    # Create a formatter to define the log message format
-    formatter = logging.Formatter(
-        "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
-
-    # Add the formatter to the handler
-    handler.setFormatter(formatter)
-
-    # Add the handler to the logger
-    logger.addHandler(handler)
-
-    return logger
+def silence_verbose_libs():
+    """Silence libraries that are too verbose."""
+    for logger_name in ["cdsodatacli", "cdsodatacli.query"]:
+        lib_logger = logging.getLogger(logger_name)
+        lib_logger.handlers.clear()
+        lib_logger.addHandler(logging.NullHandler())
+        lib_logger.propagate = False  # critical: prevents bubbling up to root
+        lib_logger.setLevel(logging.CRITICAL + 1)
 
 
 def parse_yyyymmdd(s):
@@ -94,6 +87,7 @@ def main():
         #     datefmt="%d/%m/%Y %H:%M:%S",
         # )
         logger = setup_logging(logging.DEBUG)
+        disable_tqdm = False
     else:
         # logging.basicConfig(
         #     level=logging.INFO,
@@ -101,7 +95,8 @@ def main():
         #     datefmt="%d/%m/%Y %H:%M:%S",
         # )
         logger = setup_logging(logging.INFO)
-
+        disable_tqdm = False
+    silence_verbose_libs()  # must be after setup_logging
     logger.info("start loops")
     for mode in ["IW", "EW"]:
         logger.info("treat %s", mode)
@@ -116,7 +111,7 @@ def main():
                 day2treat=dd.strftime("%Y%m%d"),
                 outputdir=outd,
                 mode=mode,
-                disable_tqdm=True,
+                disable_tqdm=disable_tqdm,
                 confpath=args.confpath,
             )
             logger.info("cpt: %s %s", type(cpt), cpt)

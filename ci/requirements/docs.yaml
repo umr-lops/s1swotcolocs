@@ -4,5 +4,11 @@ channels:
 dependencies:
     - python=3.11
     - sphinx>=4
-    - sphinx_book_theme
-    - ipython
+    - sphinx_rtd_theme # sphinx_rtd_theme extension
+    - sphinx-book-theme # was already there
+    - nbsphinx # nbsphinx extension
+    - jupyter_sphinx # jupyter_sphinx extension
+    - ipython # was already there, needed by jupyter_sphinx
+    - nbconvert # needed by nbsphinx to convert notebooks
+    - pandoc # needed by nbsphinx for format conversion
+    - ipykernel # needed to execute notebooks in nbsphinx

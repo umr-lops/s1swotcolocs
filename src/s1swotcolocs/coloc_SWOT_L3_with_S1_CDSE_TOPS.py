@@ -29,20 +29,41 @@ from s1swotcolocs.check_lonlat_polygon_extent import (
 
 # Ignorer uniquement FixWindingWarning
 warnings.filterwarnings("ignore", category=FixWindingWarning)
-warnings.filterwarnings("ignore", module="cdsodatacli")
+warnings.filterwarnings(
+    "ignore",
+    message="Geometry is in a geographic CRS",
+    category=UserWarning,
+    module="cdsodatacli",
+)
+# warnings.filterwarnings("ignore", module="cdsodatacli")
+warnings.filterwarnings(
+    "error", message="Singular matrix"
+)  # for dev to spot the origin of the error
+
+app_logger = logging.getLogger(__name__)
 
 
-app_logger = logging.getLogger(__file__)
+class _RaiseOnSingularMatrix(logging.Filter):
+    def filter(self, record):
+        if "Singular matrix" in record.getMessage():
+            raise RuntimeError("Singular matrix: " + record.getMessage())
+        return True
+
+
+_singular_filter = _RaiseOnSingularMatrix()
+
+# silence cdsodatacli first
 LOGGERS_TO_SILENCE = ["cdsodatacli", "cdsodatacli.query"]
-
 for logger_name in LOGGERS_TO_SILENCE:
     lib_logger = logging.getLogger(logger_name)
-    lib_logger.handlers.clear()  # Supprimer tous les handlers existants
-    lib_logger.addHandler(logging.NullHandler())  # Envoyer les logs nulle part
-    lib_logger.propagate = False  # Ne pas transmettre aux parents
-    lib_logger.setLevel(
-        logging.CRITICAL + 1
-    )  # Mettre un niveau très élevé pour être sûr
+    lib_logger.handlers.clear()
+    lib_logger.addHandler(logging.NullHandler())
+    lib_logger.propagate = False
+    lib_logger.setLevel(logging.CRITICAL + 1)
+
+# then attach diagnostic filter to root logger
+# _diag_filter = RaiseOnSingularMatrix()
+# logging.getLogger().addFilter(_diag_filter)
 
 
 class CDSODATACLIQueryFilter(logging.Filter):
@@ -57,8 +78,37 @@ class SuppressCDSODATACLIQuery(logging.Filter):
         return not record.name.startswith("cdsodatacli.query")
 
 
+def is_degenerate_swath(points: np.ndarray, bbox_ratio_threshold: float = 0.5) -> bool:
+    """
+    Returns True if the point set forms a swath too narrow for alphashape.
+    Uses the lon/lat bounding box aspect ratio.
+    A nearly vertical swath (small lon range, large lat range) causes
+    singular matrix in alphashape's Delaunay triangulation.
+    """
+    if len(points) < 4:
+        return True
+    lon_range = points[:, 0].max() - points[:, 0].min()
+    lat_range = points[:, 1].max() - points[:, 1].min()
+    if lat_range == 0:
+        return True
+    return (lon_range / lat_range) < bbox_ratio_threshold
+
+
+def is_nearly_collinear(points: np.ndarray, threshold: float = 0.05) -> bool:
+    """
+    Returns True if points are nearly collinear (will cause singular matrix in alphashape).
+    """
+    if len(points) < 4:  # need at least 4 points for a meaningful polygon
+        return True
+    centered = points - points.mean(axis=0)
+    _, sv, _ = np.linalg.svd(centered, full_matrices=False)
+    if sv[0] == 0:
+        return True
+    return (sv[1] / sv[0]) < threshold
+
+
 def treat_a_clean_piece_of_swot_orbit(
-    swotpiece, points, onedsswot, mode, producttype, delta_t_max
+    swotpiece, points, onedsswot, mode, producttype, delta_t_max, cpt
 ):
     """
 
@@ -94,6 +144,18 @@ def treat_a_clean_piece_of_swot_orbit(
     time_south = onedsswot["time"].isel(num_lines=num_line_idx_south).values
     app_logger.debug("time_north %s", time_north)
     app_logger.debug("time_south %s", time_south)
+    if pd.isnull(time_north) or pd.isnull(time_south):
+        app_logger.warning(
+            "NaT time values in SWOT file %s at lines %s/%s — skipping piece",
+            original_filename,
+            num_line_idx_north,
+            num_line_idx_south,
+        )
+        breakpoint()
+        cpt["NaT_time_skipped"] += 1
+        return gpd.GeoDataFrame(), cpt  # return empty, caller must handle
+    else:
+        cpt["Ok_SWOT_time_values"] += 1
     if time_north > time_south:
         startswot = time_south
         stopswot = time_north
@@ -119,7 +181,24 @@ def treat_a_clean_piece_of_swot_orbit(
         }
     )
 
-    return gdf
+    return gdf, cpt
+
+
+def compute_alphashape_safe(gdfswot, points, alpha, cpt):
+    """
+    Computes alphashape with a fallback to convex_hull if the point set
+    is degenerate (singular matrix) or any other error occurs.
+    """
+    logging.getLogger().addFilter(_singular_filter)
+    try:
+        result = alphashape.alphashape(gdfswot, alpha=alpha)
+    except (RuntimeError, Exception) as e:
+        app_logger.debug("alphashape failed (%s) — falling back to convex_hull.", e)
+        cpt["alphashape_fallback_to_convex_hull"] += 1
+        result = MultiPoint(points).convex_hull
+    finally:
+        logging.getLogger().removeFilter(_singular_filter)  # always clean up
+    return result, cpt
 
 
 def slice_swot(
@@ -157,13 +236,31 @@ def slice_swot(
     lonswot = swotsub["longitude"].values.ravel()
     lonswot[lonswot > 180] += -360.0
     points = np.column_stack((lonswot, swotsub["latitude"].values.ravel()))
+
+    # guard: not enough points or degenerate geometry
+    if len(points) < 4:
+        app_logger.debug(
+            "Skipping segment: too few points after subsampling (%i)", len(points)
+        )
+        cpt["too_few_points_skipped"] += 1
+        return sub_gdf, cpt
     # Create a MultiPoint object
     multi_point = MultiPoint(points)
 
     # Get the convex hull (smallest polygon enclosing all points)
     # polygon = multi_point.convex_hull
     gdfswot = gpd.GeoDataFrame(geometry=list(multi_point.geoms))
-    alpha_shape_swot = alphashape.alphashape(gdfswot, alpha=tolerance_simplification)
+    # if is_degenerate_point_set(points):
+    if is_degenerate_swath(points, bbox_ratio_threshold=0.5):
+        app_logger.debug(
+            "Degenerate swath shape detected — falling back to convex_hull."
+        )
+        cpt["degenerate_collinear_fallback"] += 1
+        alpha_shape_swot = MultiPoint(points).convex_hull
+    else:
+        alpha_shape_swot, cpt = compute_alphashape_safe(
+            gdfswot, points, tolerance_simplification, cpt
+        )
     land_path = geodatasets.get_path("naturalearth.land")
     land = gpd.read_file(land_path)  # .to_crs(epsg=3857)
     # land_union = land.unary_union  # a single MultiPolygon of all land
@@ -200,13 +297,14 @@ def slice_swot(
                             subsubpartswot
                         )
                         if subsubpartswot.area < max_area_size and is_ok_extents:
-                            gdf = treat_a_clean_piece_of_swot_orbit(
+                            gdf, cpt = treat_a_clean_piece_of_swot_orbit(
                                 subsubpartswot,
                                 points,
                                 onedsswot,
                                 mode,
                                 producttype,
                                 delta_t_max,
+                                cpt=cpt,
                             )
                             sub_gdf.append(gdf)
                         else:
@@ -214,13 +312,14 @@ def slice_swot(
                 else:
                     cpt["segment_interupted_by_land_only"] += 1
                     if subpartswot.area < max_area_size:
-                        gdf = treat_a_clean_piece_of_swot_orbit(
+                        gdf, cpt = treat_a_clean_piece_of_swot_orbit(
                             subpartswot,
                             points,
                             onedsswot,
                             mode,
                             producttype,
                             delta_t_max,
+                            cpt=cpt,
                         )
                         sub_gdf.append(gdf)
                     else:
@@ -241,13 +340,14 @@ def slice_swot(
                     cpt["segment_continuous_with_antimeridian"] += 1
                     for yyp, subsubpartswot in enumerate(subpartswot.geoms):
                         if subsubpartswot.area < max_area_size:
-                            gdf = treat_a_clean_piece_of_swot_orbit(
+                            gdf, cpt = treat_a_clean_piece_of_swot_orbit(
                                 subsubpartswot,
                                 points,
                                 onedsswot,
                                 mode,
                                 producttype,
                                 delta_t_max,
+                                cpt=cpt,
                             )
                             sub_gdf.append(gdf)
                         else:
@@ -255,13 +355,14 @@ def slice_swot(
                 else:
                     cpt["segment_continuous_without_antimeridian"] += 1
                     if subpartswot.area < max_area_size:
-                        gdf = treat_a_clean_piece_of_swot_orbit(
+                        gdf, cpt = treat_a_clean_piece_of_swot_orbit(
                             subpartswot,
                             points,
                             onedsswot,
                             mode,
                             producttype,
                             delta_t_max,
+                            cpt=cpt,
                         )
                         sub_gdf.append(gdf)
                     else:
@@ -275,17 +376,17 @@ def slice_swot(
 
 
 def get_swot_geoloc(
-    one_swot_l3_file,
+    one_swot_file,
     max_area_size,
     delta_hours=6,
     mode="IW",
     producttype="SLC",
     cpt=None,
     tolerance_simplification=0.1,
-) -> (list, collections.defaultdict):
+) -> tuple[list, collections.defaultdict]:
     """
 
-    :param one_swot_l3_file: str
+    :param one_swot_file: str
     :param max_area_size: float
     :param delta_hours: int
     :param mode: str IW or EW
@@ -297,8 +398,31 @@ def get_swot_geoloc(
         cpt: collections.defaultdict
     """
     allgdfs_swot = []
-    app_logger.debug("%s", one_swot_l3_file)
-    onedsswot = xr.open_dataset(one_swot_l3_file)
+    app_logger.debug("%s", one_swot_file)
+    onedsswot = xr.open_dataset(one_swot_file)
+    # trim leading and trailing NaT time values
+    time_vals = onedsswot["time"].values
+    valid_mask = ~np.isnat(time_vals)
+    if (
+        not valid_mask.all()
+    ):  # hypothseis: NaT values are only at the beginning or end of the time series, not in the middle
+        valid_indices = np.where(valid_mask)[0]
+        if len(valid_indices) == 0:
+            app_logger.warning(
+                "SWOT file %s has no valid time values — skipping", one_swot_file
+            )
+            return [], cpt
+        first_valid = valid_indices[0]
+        last_valid = valid_indices[-1]
+        n_trimmed = (~valid_mask).sum()
+        app_logger.info(
+            "Trimming %i NaT lines from SWOT file (lines %i to %i kept out of %i)",
+            n_trimmed,
+            first_valid,
+            last_valid,
+            len(time_vals),
+        )
+        onedsswot = onedsswot.isel(num_lines=slice(first_valid, last_valid + 1))
     app_logger.debug("full size time %s", onedsswot["time"].sizes)
     segment = 1000  # number of points in the azimuth direction
     if cpt is None:
@@ -320,13 +444,22 @@ def get_swot_geoloc(
 
 
 def do_cdse_query(gdf, mini_ocean=10, cache_dir=None):
+    # guard against NaT times which cause cdsodatacli to crash
+    if pd.isnull(gdf["start_datetime"].iloc[0]) or pd.isnull(
+        gdf["end_datetime"].iloc[0]
+    ):
+        app_logger.warning(
+            "Skipping CDSE query for %s: NaT start or end datetime",
+            gdf["id_query"].iloc[0],
+        )
+        return None
+
     collected_data_norm = cdsodatacli.query.fetch_data(
         gdf,
         min_sea_percent=mini_ocean,
         timedelta_slice=datetime.timedelta(days=4),
         cache_dir=None,
     )
-    # print(collected_data_norm)
     return collected_data_norm
 
 
@@ -382,6 +515,15 @@ def save_netcdf_file_per_swot_piece_orbit_core(
     SWOT_start_piece = np.array(SWOT_start_piece.tz_localize(None)).astype(
         "datetime64[s]"
     )
+
+    # force safe numpy dtypes — pandas 2.x nullable StringDtype breaks h5netcdf/netcdf4
+    sar_names = np.array(cdse_output["Name"].values, dtype=object)
+    # sar_polygons = np.array(all_SAR_polygones, dtype=str)
+    # swot_fpaths = np.array(all_SWOT_fpath, dtype=str)
+    all_start_SAR = np.array(all_start_SAR).astype("datetime64[s]")
+    all_delta_times = np.array(all_delta_times, dtype=np.float64)
+    SWOT_start_piece = np.array(SWOT_start_piece).astype("datetime64[s]")
+
     colocds = xr.Dataset()
     colocds["sar_safe_name"] = xr.DataArray(
         cdse_output["Name"].values,
@@ -412,7 +554,7 @@ def save_netcdf_file_per_swot_piece_orbit_core(
         SWOT_start_piece, attrs={"description": "SWOT slice start date"}
     )
     colocds["sar_safe_name"] = xr.DataArray(
-        cdse_output["Name"].values,
+        sar_names,
         dims="sar_start_time_slice",
         attrs={"description": "name of the SAFE Sentinel-1 products colocated"},
     )
@@ -436,6 +578,11 @@ def save_netcdf_file_per_swot_piece_orbit_core(
         cpt["new_file"] += 1
     if not os.path.exists(os.path.dirname(fpath_out)):
         os.makedirs(os.path.dirname(fpath_out), mode=0o775)
+
+    # debug lines
+    # for var_name, var in colocds.variables.items():
+    #     app_logger.debug("var: %s dtype: %s", var_name, var.dtype)
+
     colocds.to_netcdf(fpath_out, engine="h5netcdf")
     os.chmod(fpath_out, 0o664)
     app_logger.info("coloc file created : %s", fpath_out)
@@ -563,8 +710,11 @@ def treat_one_day_wrapper(day2treat, outputdir, mode, confpath, disable_tqdm=Fal
     lstswotfiles = []
     dd = datetime.datetime.strptime(day2treat, "%Y%m%d")
     app_logger.info("treat day : %s", dd)
-    pattern = os.path.join(dswot, "*nc")
+    pattern = os.path.join(
+        dswot, f"SWOT_L2_LR_SSH_WindWave_*{dd.strftime('_%Y%m%dT')}*.nc"
+    )  # example SWOT_L2_LR_SSH_WindWave_032_227_20250506T023814_20250506T032943_PID0_01.nc
     app_logger.info("pattern : %s", pattern)
+    print("pattern SWOT", pattern)
     lstswotfiles += glob.glob(pattern)
     app_logger.info("Nb files SWOT found : %i", len(lstswotfiles))
     app_logger.info(
@@ -576,7 +726,7 @@ def treat_one_day_wrapper(day2treat, outputdir, mode, confpath, disable_tqdm=Fal
     cpt["nbSWOTfiles"] = len(lstswotfiles)
     for ii in tqdm(range(len(lstswotfiles)), disable=disable_tqdm):
         oneswotfile = lstswotfiles[ii]
-        gdf, cpt = get_swot_geoloc(
+        swot_distinct_gdfs_list, cpt = get_swot_geoloc(
             oneswotfile,
             delta_hours=conf["DELTA_HOURS"],
             max_area_size=conf["MAX_AREA_SIZE"],
@@ -585,7 +735,8 @@ def treat_one_day_wrapper(day2treat, outputdir, mode, confpath, disable_tqdm=Fal
             tolerance_simplification=conf["TOLERANCE_SIMPLIFICATION"],
         )
         # all_gdf.append(gdf)
-        SWOTgdfs += gdf
+        # if len(swot_distinct_gdfs_list) > 0:
+        SWOTgdfs += swot_distinct_gdfs_list
         # if ii==5:
         #     break
     app_logger.info("GeoDataFrames prepared for CDSE queries: %s", cpt)
@@ -672,6 +823,7 @@ def main():
         outputdir=args.outputdir,
         mode=args.mode,
         confpath=args.conf,
+        disable_tqdm=False,
     )
     for uu in cpt:
         logging.info(
