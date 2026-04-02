@@ -99,6 +99,7 @@ class SuppressCDSODATACLIQuery(logging.Filter):
 # Geometry helpers
 # ---------------------------------------------------------------------------
 
+
 def is_degenerate_swath(points: np.ndarray, bbox_ratio_threshold: float = 0.5) -> bool:
     """
     Returns True if the point set forms a swath too narrow for alphashape.
@@ -129,6 +130,7 @@ def is_nearly_collinear(points: np.ndarray, threshold: float = 0.05) -> bool:
 # ---------------------------------------------------------------------------
 # Core processing functions
 # ---------------------------------------------------------------------------
+
 
 def treat_a_clean_piece_of_swot_orbit(
     swotpiece, points, onedsswot, mode, producttype, delta_t_max, cpt
@@ -188,16 +190,14 @@ def treat_a_clean_piece_of_swot_orbit(
     gdf = gpd.GeoDataFrame(
         {
             "start_datetime": [sta],
-            "end_datetime":   [sto],
-            "geometry":       [swotpiece],
-            "collection":     ["SENTINEL-1"],
-            "name":           [None],
-            "sensormode":     [mode],
-            "producttype":    [producttype],
-            "Attributes":     [None],
-            "id_query":       [
-                "SWOT %s %s %s" % (original_filename, startswot, stopswot)
-            ],
+            "end_datetime": [sto],
+            "geometry": [swotpiece],
+            "collection": ["SENTINEL-1"],
+            "name": [None],
+            "sensormode": [mode],
+            "producttype": [producttype],
+            "Attributes": [None],
+            "id_query": ["SWOT %s %s %s" % (original_filename, startswot, stopswot)],
         }
     )
     return gdf, cpt
@@ -219,7 +219,9 @@ def compute_alphashape_safe(gdfswot, points, alpha, cpt):
     return result, cpt
 
 
-def _safe_fix_polygon(polygon, cpt: collections.defaultdict, context: str = "", **kwargs):
+def _safe_fix_polygon(
+    polygon, cpt: collections.defaultdict, context: str = "", **kwargs
+):
     """
     Wrapper around antimeridian.fix_polygon that catches both AssertionError
     and ValueError.
@@ -301,7 +303,9 @@ def slice_swot(
     gdfswot = gpd.GeoDataFrame(geometry=list(multi_point.geoms))
 
     # ── FIX: also check collinearity before alphashape, not just aspect ratio ──
-    if is_degenerate_swath(points, bbox_ratio_threshold=0.5) or is_nearly_collinear(points):
+    if is_degenerate_swath(points, bbox_ratio_threshold=0.5) or is_nearly_collinear(
+        points
+    ):
         app_logger.debug(
             "Degenerate swath shape detected (narrow or collinear) "
             "— falling back to convex_hull."
@@ -346,8 +350,13 @@ def slice_swot(
                     )
                     if subsubpartswot.area < max_area_size and is_ok_extents:
                         gdf, cpt = treat_a_clean_piece_of_swot_orbit(
-                            subsubpartswot, points, onedsswot,
-                            mode, producttype, delta_t_max, cpt=cpt,
+                            subsubpartswot,
+                            points,
+                            onedsswot,
+                            mode,
+                            producttype,
+                            delta_t_max,
+                            cpt=cpt,
                         )
                         sub_gdf.append(gdf)
                     else:
@@ -356,8 +365,13 @@ def slice_swot(
                 cpt["segment_interupted_by_land_only"] += 1
                 if subpartswot.area < max_area_size:
                     gdf, cpt = treat_a_clean_piece_of_swot_orbit(
-                        subpartswot, points, onedsswot,
-                        mode, producttype, delta_t_max, cpt=cpt,
+                        subpartswot,
+                        points,
+                        onedsswot,
+                        mode,
+                        producttype,
+                        delta_t_max,
+                        cpt=cpt,
                     )
                     sub_gdf.append(gdf)
                 else:
@@ -367,7 +381,9 @@ def slice_swot(
         # Single contiguous polygon over ocean
         # ── FIX: _safe_fix_polygon catches ValueError + AssertionError ──
         subpartswot, ok = _safe_fix_polygon(
-            simplified_polygon, cpt, context="single polygon",
+            simplified_polygon,
+            cpt,
+            context="single polygon",
             fix_winding=True,
         )
         if not ok:
@@ -378,8 +394,13 @@ def slice_swot(
             for yyp, subsubpartswot in enumerate(subpartswot.geoms):
                 if subsubpartswot.area < max_area_size:
                     gdf, cpt = treat_a_clean_piece_of_swot_orbit(
-                        subsubpartswot, points, onedsswot,
-                        mode, producttype, delta_t_max, cpt=cpt,
+                        subsubpartswot,
+                        points,
+                        onedsswot,
+                        mode,
+                        producttype,
+                        delta_t_max,
+                        cpt=cpt,
                     )
                     sub_gdf.append(gdf)
                 else:
@@ -388,8 +409,13 @@ def slice_swot(
             cpt["segment_continuous_without_antimeridian"] += 1
             if subpartswot.area < max_area_size:
                 gdf, cpt = treat_a_clean_piece_of_swot_orbit(
-                    subpartswot, points, onedsswot,
-                    mode, producttype, delta_t_max, cpt=cpt,
+                    subpartswot,
+                    points,
+                    onedsswot,
+                    mode,
+                    producttype,
+                    delta_t_max,
+                    cpt=cpt,
                 )
                 sub_gdf.append(gdf)
             else:
@@ -431,11 +457,14 @@ def get_swot_geoloc(
             )
             return [], cpt
         first_valid = valid_indices[0]
-        last_valid  = valid_indices[-1]
-        n_trimmed   = (~valid_mask).sum()
+        last_valid = valid_indices[-1]
+        n_trimmed = (~valid_mask).sum()
         app_logger.info(
             "Trimming %i NaT lines from SWOT file (lines %i to %i kept out of %i)",
-            n_trimmed, first_valid, last_valid, len(time_vals),
+            n_trimmed,
+            first_valid,
+            last_valid,
+            len(time_vals),
         )
         onedsswot = onedsswot.isel(num_lines=slice(first_valid, last_valid + 1))
 
@@ -462,7 +491,9 @@ def get_swot_geoloc(
 
 
 def do_cdse_query(gdf, mini_ocean=10, cache_dir=None):
-    if pd.isnull(gdf["start_datetime"].iloc[0]) or pd.isnull(gdf["end_datetime"].iloc[0]):
+    if pd.isnull(gdf["start_datetime"].iloc[0]) or pd.isnull(
+        gdf["end_datetime"].iloc[0]
+    ):
         app_logger.warning(
             "Skipping CDSE query for %s: NaT start or end datetime",
             gdf["id_query"].iloc[0],
@@ -489,29 +520,29 @@ def save_netcdf_file_per_swot_piece_orbit_core(
     swot_polygon = "%s" % swot_gdf["geometry"][0]
 
     all_SAR_polygones = []
-    all_SWOT_fpath    = []
-    all_start_SAR     = []
-    all_delta_times   = []
+    all_SWOT_fpath = []
+    all_start_SAR = []
+    all_delta_times = []
 
     start_time_strings = cdse_output["ContentDate"].str["Start"]
     cdse_output["Start_dt"] = pd.to_datetime(start_time_strings, utc=True)
 
     for sasa in range(len(cdse_output["geometry"])):
         all_SAR_polygones.append("%s" % cdse_output["geometry"].iloc[sasa])
-        SAR_start_slice      = cdse_output["Start_dt"].iloc[sasa]
-        delta_diff_time      = SWOT_start_piece - SAR_start_slice
+        SAR_start_slice = cdse_output["Start_dt"].iloc[sasa]
+        delta_diff_time = SWOT_start_piece - SAR_start_slice
         delta_diff_time_minutes = delta_diff_time / np.timedelta64(1, "m")
         all_start_SAR.append(SAR_start_slice.tz_localize(None))
         all_delta_times.append(delta_diff_time_minutes)
-        all_SWOT_fpath.append(
-            cdse_output["id_original_query"].iloc[sasa].split(" ")[1]
-        )
+        all_SWOT_fpath.append(cdse_output["id_original_query"].iloc[sasa].split(" ")[1])
 
-    all_start_SAR    = np.array(all_start_SAR).astype("datetime64[s]")
-    SWOT_start_piece = np.array(SWOT_start_piece.tz_localize(None)).astype("datetime64[s]")
-    sar_names        = np.array(cdse_output["Name"].values, dtype=object)
-    all_start_SAR    = np.array(all_start_SAR).astype("datetime64[s]")
-    all_delta_times  = np.array(all_delta_times, dtype=np.float64)
+    all_start_SAR = np.array(all_start_SAR).astype("datetime64[s]")
+    SWOT_start_piece = np.array(SWOT_start_piece.tz_localize(None)).astype(
+        "datetime64[s]"
+    )
+    sar_names = np.array(cdse_output["Name"].values, dtype=object)
+    all_start_SAR = np.array(all_start_SAR).astype("datetime64[s]")
+    all_delta_times = np.array(all_delta_times, dtype=np.float64)
     SWOT_start_piece = np.array(SWOT_start_piece).astype("datetime64[s]")
 
     colocds = xr.Dataset()
@@ -522,25 +553,29 @@ def save_netcdf_file_per_swot_piece_orbit_core(
         attrs={"description": "name of the SAFE Sentinel-1 products colocated"},
     )
     colocds["filepath_swot"] = xr.DataArray(
-        all_SWOT_fpath, dims="sar_start_time_slice",
+        all_SWOT_fpath,
+        dims="sar_start_time_slice",
         attrs={"description": "file paths of SWOT products colocated"},
     )
     colocds["delta_diff_time"] = xr.DataArray(
-        all_delta_times, dims="sar_start_time_slice",
+        all_delta_times,
+        dims="sar_start_time_slice",
         attrs={"description": "delta time SWOT - SAR in minutes"},
     )
     colocds["SWOT_start_time_slice"] = xr.DataArray(
         SWOT_start_piece, attrs={"description": "SWOT slice start date"}
     )
     colocds["sar_safe_name"] = xr.DataArray(
-        sar_names, dims="sar_start_time_slice",
+        sar_names,
+        dims="sar_start_time_slice",
         attrs={"description": "name of the SAFE Sentinel-1 products colocated"},
     )
     colocds["swot_polygon"] = xr.DataArray(
         swot_polygon, attrs={"description": "polygon of SWOT piece of orbit"}
     )
     colocds["sar_polygon"] = xr.DataArray(
-        all_SAR_polygones, dims="sar_start_time_slice",
+        all_SAR_polygones,
+        dims="sar_start_time_slice",
         attrs={"description": "polygons of SAR products"},
     )
     colocds.attrs["s1swotcolocs_python_lib_version"] = s1swotcolocs.__version__
@@ -572,9 +607,9 @@ def get_swot_date_info(SWOT_start_piece):
         year (int), month (str MM), day (str DD)
     """
     dt_py = SWOT_start_piece.astype("M8[D]").astype(object)
-    year  = dt_py.year
+    year = dt_py.year
     month = f"{dt_py.month:02d}"
-    day   = f"{dt_py.day:02d}"
+    day = f"{dt_py.day:02d}"
     swot_formated_date = (
         ("%s" % SWOT_start_piece).replace("-", "").replace(":", "").split(".")[0]
     )
@@ -587,12 +622,15 @@ def save_meta_coloc_output(
     assert len(cddesS1outputs) == len(SWOTgdfs)
     for xxi in tqdm(range(len(cddesS1outputs)), disable=disable_tqdm):
         one_cds_output = cddesS1outputs[xxi]
-        swot_gdf       = SWOTgdfs[xxi]
+        swot_gdf = SWOTgdfs[xxi]
         if one_cds_output is not None:
-            SWOT_start_piece  = np.datetime64(swot_gdf["id_query"][0].split(" ")[2])
+            SWOT_start_piece = np.datetime64(swot_gdf["id_query"][0].split(" ")[2])
             swot_formated_date, year, month, day = get_swot_date_info(SWOT_start_piece)
             fpath_out = os.path.join(
-                dir_output, "%s" % year, "%s" % month, "%s" % day,
+                dir_output,
+                "%s" % year,
+                "%s" % month,
+                "%s" % day,
                 "coloc_SWOT_L3_Sentinel-1_IW_%s.nc" % swot_formated_date,
             )
             app_logger.info("fpath_out: %s", fpath_out)
@@ -612,7 +650,8 @@ def save_meta_coloc_output(
     )
     app_logger.info(
         "number of SWOT piece of orbit without S1 coloc : %i/%i",
-        cpt["no_coloc"], len(cddesS1outputs),
+        cpt["no_coloc"],
+        len(cddesS1outputs),
     )
     return cpt
 
@@ -622,29 +661,37 @@ def parse_args():
     parser.add_argument("--verbose", action="store_true", default=False)
     parser.add_argument("--day2treat", required=True, help="YYYYMMDD")
     parser.add_argument(
-        "--mode", required=False, choices=["IW", "EW"], default="IW",
+        "--mode",
+        required=False,
+        choices=["IW", "EW"],
+        default="IW",
         help="IW or EW [default=IW]",
     )
     parser.add_argument(
-        "--outputdir", required=True,
+        "--outputdir",
+        required=True,
         help="directory where to store output netCDF files",
     )
     parser.add_argument("--conf", required=True, help="config file to use")
     return parser.parse_args()
 
 
-def treat_one_day_wrapper(day2treat, outputdir, mode, confpath, disable_tqdm=False):
+def treat_one_day_wrapper(
+    day2treat, outputdir, mode, confpath, disable_tqdm=False, dev=False
+):
     """
     :param day2treat: str YYYYMMDD
     :param outputdir: str
     :param mode: str "IW" or "EW"
     :param confpath: str full path of the config.yml
     :param disable_tqdm: bool
+    :param dev: bool, True -> use a smaller subset of SWOT files for faster dev iterations
+
     :return: cpt (collections.defaultdict)
     """
-    t0   = time.time()
+    t0 = time.time()
     conf = get_conf_content(confpath)
-    dswot      = conf["SWOT_L2_AVISO_DIR"]
+    dswot = conf["SWOT_L2_AVISO_DIR"]
     CACHE_CDSE = conf["CACHE_CDSE"]
 
     dd = datetime.datetime.strptime(day2treat, "%Y%m%d")
@@ -665,6 +712,14 @@ def treat_one_day_wrapper(day2treat, outputdir, mode, confpath, disable_tqdm=Fal
     SWOTgdfs = []
     cpt = collections.defaultdict(int)
     cpt["nbSWOTfiles"] = len(lstswotfiles)
+
+    if dev:
+        app_logger.info(
+            "Development mode: using only a subset of SWOT files for faster iterations."
+        )
+        lstswotfiles = lstswotfiles[
+            :2
+        ]  # Use only the first 2 SWOT files for development iterations
 
     for ii in tqdm(range(len(lstswotfiles)), disable=disable_tqdm):
         oneswotfile = lstswotfiles[ii]
@@ -716,12 +771,12 @@ def treat_one_day_wrapper(day2treat, outputdir, mode, confpath, disable_tqdm=Fal
 
 
 def main():
-    args      = parse_args()
+    args = parse_args()
     log_level = logging.DEBUG if args.verbose else logging.INFO
     log_format = "%(asctime)s %(levelname)s %(filename)s(%(lineno)d) %(message)s"
     nouvelle_date_format = "%d-%m-%Y %H:%M:%S"
-    nouveau_formatter    = logging.Formatter(log_format, datefmt=nouvelle_date_format)
-    console_handler_app  = logging.StreamHandler(sys.stdout)
+    nouveau_formatter = logging.Formatter(log_format, datefmt=nouvelle_date_format)
+    console_handler_app = logging.StreamHandler(sys.stdout)
     console_handler_app.setFormatter(nouveau_formatter)
     app_logger.addHandler(console_handler_app)
     app_logger.setLevel(log_level)

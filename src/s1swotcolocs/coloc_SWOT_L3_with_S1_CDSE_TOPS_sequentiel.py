@@ -25,15 +25,16 @@ import datetime
 # Global counter keys
 # ---------------------------------------------------------------------------
 
-CTR_DAYS_OK              = "days_processed_ok"
-CTR_DAYS_LINEARRING      = "days_skipped_linearring_error"
-CTR_DAYS_ERROR           = "days_skipped_other_error"
-CTR_TOTAL_MATCHUPS       = "total_matchups_found"   # sum of cpt values across days
+CTR_DAYS_OK = "days_processed_ok"
+CTR_DAYS_LINEARRING = "days_skipped_linearring_error"
+CTR_DAYS_ERROR = "days_skipped_other_error"
+CTR_TOTAL_MATCHUPS = "total_matchups_found"  # sum of cpt values across days
 
 
 # ---------------------------------------------------------------------------
 # Logging setup
 # ---------------------------------------------------------------------------
+
 
 def setup_logging(log_level=logging.INFO):
     root_logger = logging.getLogger()
@@ -64,6 +65,7 @@ def silence_verbose_libs():
 # Argument parsing
 # ---------------------------------------------------------------------------
 
+
 def parse_yyyymmdd(s):
     try:
         return datetime.datetime.strptime(s, "%Y%m%d")
@@ -77,6 +79,7 @@ def parse_yyyymmdd(s):
 # Summary display
 # ---------------------------------------------------------------------------
 
+
 def _print_global_summary(global_counters: defaultdict, logger) -> None:
     """Print a formatted summary of all accumulated counters."""
     width = 40
@@ -84,10 +87,10 @@ def _print_global_summary(global_counters: defaultdict, logger) -> None:
     logger.info("  GLOBAL RUN SUMMARY")
     logger.info("=" * (width + 10))
     labels = {
-        CTR_DAYS_OK:         "Days processed successfully",
+        CTR_DAYS_OK: "Days processed successfully",
         CTR_DAYS_LINEARRING: "Days skipped (linearring error)",
-        CTR_DAYS_ERROR:      "Days skipped (other error)",
-        CTR_TOTAL_MATCHUPS:  "Total matchups found across all days",
+        CTR_DAYS_ERROR: "Days skipped (other error)",
+        CTR_TOTAL_MATCHUPS: "Total matchups found across all days",
     }
     for key, label in labels.items():
         logger.info("  %-*s %d", width, label, global_counters[key])
@@ -97,6 +100,7 @@ def _print_global_summary(global_counters: defaultdict, logger) -> None:
 # ---------------------------------------------------------------------------
 # Safe wrapper around treat_one_day_wrapper
 # ---------------------------------------------------------------------------
+
 
 def safe_treat_one_day(
     day_str: str,
@@ -150,13 +154,17 @@ def safe_treat_one_day(
                 "Linearring error on %s mode=%s — skipping day. "
                 "This is a known antimeridian/shapely issue on degenerate "
                 "SWOT polygons near poles. Detail: %s",
-                day_str, mode, exc,
+                day_str,
+                mode,
+                exc,
             )
         else:
             global_counters[CTR_DAYS_ERROR] += 1
             logger.error(
                 "ValueError (non-linearring) on %s mode=%s — skipping day.",
-                day_str, mode, exc_info=True,
+                day_str,
+                mode,
+                exc_info=True,
             )
         return {}
 
@@ -164,7 +172,9 @@ def safe_treat_one_day(
         global_counters[CTR_DAYS_ERROR] += 1
         logger.error(
             "Unexpected error on %s mode=%s — skipping day.",
-            day_str, mode, exc_info=True,
+            day_str,
+            mode,
+            exc_info=True,
         )
         return {}
 
@@ -172,6 +182,7 @@ def safe_treat_one_day(
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
+
 
 def main():
     parser = argparse.ArgumentParser(
@@ -201,6 +212,18 @@ def main():
         help="Path of the config.yml to use",
         required=True,
     )
+    parser.add_argument(
+        "--dev",
+        action="store_true",
+        default=False,
+        help="Development mode: use a smaller subset of SWOT files for faster iterations",
+    )
+    parser.add_argument(
+        "--mode",
+        help="Collocation mode: 'IW' or 'EW'",
+        required=False,
+        default=None,
+    )
     args = parser.parse_args()
 
     log_level = logging.DEBUG if args.verbose else logging.INFO
@@ -209,27 +232,35 @@ def main():
 
     global_counters: defaultdict = defaultdict(int)
 
-    logger.info("Start loops — startdate=%s stopdate=%s",
-                args.startdate.strftime("%Y%m%d"),
-                args.stopdate.strftime("%Y%m%d"))
-
-    for mode in ["IW", "EW"]:
+    logger.info(
+        "Start loops — startdate=%s stopdate=%s",
+        args.startdate.strftime("%Y%m%d"),
+        args.stopdate.strftime("%Y%m%d"),
+    )
+    logger.info("Output directory: %s", args.outputdir)
+    logger.info("Config path: %s", args.confpath)
+    logger.info("Development mode: %s", args.dev)
+    if args.mode:
+        modes_to_process = [args.mode]
+    else:
+        modes_to_process = ["IW", "EW"]
+    logger.info("Collocation modes to process: %s", ", ".join(modes_to_process))
+    for mode in modes_to_process:
         logger.info("Processing mode: %s", mode)
 
-        for dd in rrule.rrule(
-            rrule.DAILY, dtstart=args.startdate, until=args.stopdate
-        ):
+        for dd in rrule.rrule(rrule.DAILY, dtstart=args.startdate, until=args.stopdate):
             day_str = dd.strftime("%Y%m%d")
-            outd    = os.path.join(args.outputdir, mode)
+            outd = os.path.join(args.outputdir, mode)
 
             cpt = safe_treat_one_day(
-                day_str      = day_str,
-                outd         = outd,
-                mode         = mode,
-                disable_tqdm = not args.verbose,
-                confpath     = args.confpath,
-                global_counters = global_counters,
-                logger       = logger,
+                day_str=day_str,
+                outd=outd,
+                mode=mode,
+                disable_tqdm=not args.verbose,
+                confpath=args.confpath,
+                global_counters=global_counters,
+                logger=logger,
+                dev=args.dev,
             )
 
             # Per-day detail log (same as original)
@@ -238,8 +269,9 @@ def main():
                 for key, val in cpt.items():
                     logger.info("\t %s: %s", key, val)
             else:
-                logger.info("Day: %s mode: %s — no output (skipped or empty)",
-                            day_str, mode)
+                logger.info(
+                    "Day: %s mode: %s — no output (skipped or empty)", day_str, mode
+                )
 
     _print_global_summary(global_counters, logger)
     logger.info("Done — %s", os.path.basename(__file__))
