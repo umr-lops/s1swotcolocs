@@ -1,0 +1,72 @@
+Bootstrap: docker
+From: ubuntu:22.04
+
+%arguments
+    CI_JOB_TOKEN=none
+
+%files
+    environment.yml /opt/environment.yml
+    . /opt/app_src
+
+%environment
+    # This section is critical. It makes your scripts available at runtime.
+    export MAMBA_ROOT_PREFIX=/opt/conda
+    export ENV_NAME=myenv
+    export PATH=/opt/conda/envs/myenv/bin:/opt/conda/bin:$PATH
+    export PYTHONUNBUFFERED=1
+
+%post
+    export MAMBA_ROOT_PREFIX=/opt/conda
+    export MAMBA_VERSION=1.5.6
+    export ENV_NAME=myenv
+    
+    # Throttling to prevent memory errors
+    export MAMBA_PARALLEL_PROCESSES=1
+    export CONDA_MAX_THREADS=1
+
+    # 1. System dependencies
+    apt-get update && apt-get install -y --no-install-recommends \
+        curl bzip2 ca-certificates libglib2.0-0 libxext6 libsm6 libxrender1 build-essential
+    
+    # 2. Micromamba
+    mkdir -p /usr/local/bin
+    curl -L https://micromamba.snakepit.net/api/micromamba/linux-64/${MAMBA_VERSION} | \
+    tar -xvj --strip-components=1 -C /usr/local/bin/ bin/micromamba
+
+    # 3. Environment creation
+    micromamba create -y -r $MAMBA_ROOT_PREFIX -n $ENV_NAME -f /opt/environment.yml --quiet
+    
+    # 4. Install private dependency
+    /opt/conda/envs/$ENV_NAME/bin/pip install s1ifr \
+        --no-cache-dir \
+        --extra-index-url https://gitlab-ci-token:{{ CI_JOB_TOKEN }}@gitlab.ifremer.fr/api/v4/projects/4991/packages/pypi/simple
+
+    # 5. Install the local application (generates the scripts from pyproject.toml)
+    cd /opt/app_src
+    /opt/conda/envs/$ENV_NAME/bin/pip install .
+
+    # 6. Final permissions
+    chmod -R 755 /opt/conda
+    chmod -R 755 /opt/app_src
+
+    # 7. Cleanup
+    micromamba clean -a -y
+    apt-get purge -y curl bzip2 build-essential
+    apt-get autoremove -y
+    apt-get clean
+    rm -rf /var/lib/apt/lists/* /opt/environment.yml
+
+%runscript
+    # The "Magic" pass-through:
+    # If you provide arguments, it executes them as a command.
+    # Since /opt/conda/envs/myenv/bin is in PATH, it will find your scripts.
+    if [ $# -eq 0 ]; then
+        echo "No command provided. Starting Python interpreter..."
+        exec python
+    else
+        exec "$@"
+    fi
+
+%test
+    # Check if one of your scripts is actually in the PATH
+    which download_l2_swot_karin_lr_ssh_windwave_cnes
