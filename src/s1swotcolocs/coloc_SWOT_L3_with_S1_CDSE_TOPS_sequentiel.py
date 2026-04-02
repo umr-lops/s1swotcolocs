@@ -110,6 +110,7 @@ def safe_treat_one_day(
     confpath: str,
     global_counters: defaultdict,
     logger,
+    dev: bool = False,
 ) -> dict:
     """
     Call treat_one_day_wrapper with targeted exception handling.
@@ -127,6 +128,22 @@ def safe_treat_one_day(
     traceback, and counted separately so it does not silently mask bugs.
 
     Returns the cpt dict from treat_one_day_wrapper, or an empty dict on error.
+
+    Args:
+        day_str: Date string in YYYYMMDD format for the day to process.
+        outd: Output directory for the day's results.
+        mode: Collocation mode ('IW' or 'EW').
+        disable_tqdm: Whether to disable tqdm progress bars.
+        confpath: Path to the config.yml file.
+        global_counters: A defaultdict to accumulate global counts across days.
+        logger: Logger instance for logging messages.
+        dev: Whether to run in development mode (not used here but passed through).
+
+    Returns:
+        dict: The cpt dictionary returned by treat_one_day_wrapper, or empty dict on error
+
+    Raises:
+        None. All exceptions are caught and logged, and the function returns an empty dict on error.
     """
     try:
         cpt = treat_one_day_wrapper(
@@ -135,6 +152,7 @@ def safe_treat_one_day(
             mode=mode,
             disable_tqdm=disable_tqdm,
             confpath=confpath,
+            dev=dev,
         )
         global_counters[CTR_DAYS_OK] += 1
 

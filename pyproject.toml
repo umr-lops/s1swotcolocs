@@ -68,7 +68,7 @@ default_section = "THIRDPARTY"
 known_first_party = "s1swotcolocs"
 
 [project.scripts]
-coloc_SWOT_L3_with_S1_CDSE_TOPS_sequential_wrapper = "s1swotcolocs.coloc_SWOT_L3_with_S1_CDSE_TOPS_sequential_wrapper:main"
+#coloc_SWOT_L3_with_S1_CDSE_TOPS_sequential_wrapper = "s1swotcolocs.coloc_SWOT_L3_with_S1_CDSE_TOPS_sequential_wrapper:main"
 coloc_SWOT_L3_with_S1_CDSE_TOPS_sequentiel = "s1swotcolocs.coloc_SWOT_L3_with_S1_CDSE_TOPS_sequentiel:main"
 coloc_seastate_SWOT_S1 = "s1swotcolocs.seastate_colocs_s1_swot:main"
 coloc_seastate_SWOT_S1_sequential = "s1swotcolocs.seastate_colocs_s1_swot_sequential:main"

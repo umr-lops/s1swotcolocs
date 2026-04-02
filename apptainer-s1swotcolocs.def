@@ -19,7 +19,7 @@ From: ubuntu:22.04
     export MAMBA_ROOT_PREFIX=/opt/conda
     export MAMBA_VERSION=1.5.6
     export ENV_NAME=myenv
-    
+
     # Throttling to prevent memory errors
     export MAMBA_PARALLEL_PROCESSES=1
     export CONDA_MAX_THREADS=1
@@ -27,7 +27,7 @@ From: ubuntu:22.04
     # 1. System dependencies
     apt-get update && apt-get install -y --no-install-recommends \
         curl bzip2 ca-certificates libglib2.0-0 libxext6 libsm6 libxrender1 build-essential
-    
+
     # 2. Micromamba
     mkdir -p /usr/local/bin
     curl -L https://micromamba.snakepit.net/api/micromamba/linux-64/${MAMBA_VERSION} | \
@@ -35,7 +35,7 @@ From: ubuntu:22.04
 
     # 3. Environment creation
     micromamba create -y -r $MAMBA_ROOT_PREFIX -n $ENV_NAME -f /opt/environment.yml --quiet
-    
+
     # 4. Install private dependency
     /opt/conda/envs/$ENV_NAME/bin/pip install s1ifr \
         --no-cache-dir \
