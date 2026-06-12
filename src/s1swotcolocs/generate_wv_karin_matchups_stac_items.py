@@ -48,17 +48,31 @@ def parse_wv_metadata(filepath: str) -> Dict[str, Any]:
 
     try:
         with xr.open_dataset(filepath) as ds:
-            if 'time' in ds.coords:
-                t_val = ds['time'].values[0]
+            # In L2F files, time can be in coords or a coordinate variable (like fdatedt)
+            time_var = 'time' if 'time' in ds.coords else ('fdatedt' if 'fdatedt' in ds.coords or 'fdatedt' in ds.variables else None)
+            if time_var:
+                t_val = ds[time_var].values[0]
                 if hasattr(t_val, 'astype'):
                     timestamp = np.datetime64(t_val).astype('datetime64[s]').astype(int)
                 else:
                     timestamp = int(t_val)
 
-            if 'latitude' in ds.coords and 'longitude' in ds.coords:
+            # L2F files often use lonmin/lonmax etc instead of 2D coords
+            if 'longitude' in ds.coords and 'latitude' in ds.coords:
                 lat = ds['latitude'].values
                 lon = ds['longitude'].values
                 footprint = box(float(lon.min()), float(lat.min()), float(lon.max()), float(lat.max()))
+            elif 'lonmin' in ds.variables and 'latmin' in ds.variables:
+                footer_vals = {
+                    'lonmin': ds['lonmin'].values,
+                    'lonmax': ds['lonmax'].values,
+                    'latmin': ds['latmin'].values,
+                    'latmax': ds['latmax'].values,
+                }
+                # Handle cases where these might be arrays (for single records)
+                def get_val(v): return float(v[0]) if hasattr(v, '__len__') else float(v)
+                footprint = box(get_val(footer_vals['lonmin']), get_val(footer_vals['latmin']), 
+                                get_val(footer_vals['lonmax']), get_val(footer_vals['latmax']))
     except Exception:
         pass
 
