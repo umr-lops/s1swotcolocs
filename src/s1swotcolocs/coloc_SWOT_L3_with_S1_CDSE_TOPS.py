@@ -133,16 +133,16 @@ def is_nearly_collinear(points: np.ndarray, threshold: float = 0.05) -> bool:
 
 
 def treat_a_clean_piece_of_swot_orbit(
-    swotpiece, points, onedsswot, mode, producttype, delta_t_max, cpt
+    swotpiece, points, swotsub, mode, producttype, delta_t_max, cpt
 ):
     """
     :param swotpiece: shapely.geometry.Polygon simplified, not crossing antimeridian
     :param points: 2D matrix with lon and lat from SWOT
-    :param onedsswot: xarray.Dataset SWOT L3
+    :param swotsub: sub part of a SWOT xarray.Dataset 
     :return: (GeoDataFrame, cpt)
     """
     app_logger.debug("swotpiece : %s", swotpiece)
-    original_filename = os.path.basename(onedsswot.encoding["source"])
+    original_filename = os.path.basename(swotsub.encoding["source"])
     lonmin = np.amin(swotpiece.exterior.xy[0])
     lonmax = np.amax(swotpiece.exterior.xy[0])
     latmin = np.amin(swotpiece.exterior.xy[1])
@@ -154,12 +154,12 @@ def treat_a_clean_piece_of_swot_orbit(
     dd, idx_south = tree.query([lonmin, latmin], k=1)
     app_logger.debug("idx_north : %s", idx_north)
     app_logger.debug("idx_south : %s", idx_south)
-    num_line_idx_north, _ = np.unravel_index(idx_north, onedsswot["longitude"].shape)
-    num_line_idx_south, _ = np.unravel_index(idx_south, onedsswot["longitude"].shape)
+    num_line_idx_north, _ = np.unravel_index(idx_north, swotsub["longitude"].shape)
+    num_line_idx_south, _ = np.unravel_index(idx_south, swotsub["longitude"].shape)
     app_logger.debug("num_line_idx_north : %s", num_line_idx_north)
     app_logger.debug("num_line_idx_south : %s", num_line_idx_south)
-    time_north = onedsswot["time"].isel(num_lines=num_line_idx_north).values
-    time_south = onedsswot["time"].isel(num_lines=num_line_idx_south).values
+    time_north = swotsub["time"].isel(num_lines=num_line_idx_north).values
+    time_south = swotsub["time"].isel(num_lines=num_line_idx_south).values
     app_logger.debug("time_north %s", time_north)
     app_logger.debug("time_south %s", time_south)
 
@@ -352,7 +352,7 @@ def slice_swot(
                         gdf, cpt = treat_a_clean_piece_of_swot_orbit(
                             subsubpartswot,
                             points,
-                            onedsswot,
+                            swotsub,
                             mode,
                             producttype,
                             delta_t_max,
@@ -367,7 +367,7 @@ def slice_swot(
                     gdf, cpt = treat_a_clean_piece_of_swot_orbit(
                         subpartswot,
                         points,
-                        onedsswot,
+                        swotsub,
                         mode,
                         producttype,
                         delta_t_max,
@@ -396,7 +396,7 @@ def slice_swot(
                     gdf, cpt = treat_a_clean_piece_of_swot_orbit(
                         subsubpartswot,
                         points,
-                        onedsswot,
+                        swotsub,
                         mode,
                         producttype,
                         delta_t_max,
@@ -411,7 +411,7 @@ def slice_swot(
                 gdf, cpt = treat_a_clean_piece_of_swot_orbit(
                     subpartswot,
                     points,
-                    onedsswot,
+                    swotsub,
                     mode,
                     producttype,
                     delta_t_max,
