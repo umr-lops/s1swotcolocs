@@ -11,10 +11,10 @@ import re
 from s1swotcolocs.utils import calculate_overlap_percentage, get_swot_date_info
 
 def extract_time_from_wv_filename(filename: str) -> Optional[int]:
-    \"\"\"
+    """
     Extracts timestamp from S1 WV filename format: 
     e.g., s1a-wv2-ocn-vv-20250531t113616-20250531t113619...
-    \"\"\"
+    """
     match = re.search(r'(\d{8}t\d{6})', filename)
     if match:
         time_str = match.group(1)
@@ -23,10 +23,10 @@ def extract_time_from_wv_filename(filename: str) -> Optional[int]:
     return None
 
 def extract_times_from_swot_filename(filename: str) -> Tuple[Optional[int], Optional[int]]:
-    \"\"\"
+    """
     Extracts start and end timestamps from SWOT L2 filename format:
     e.g., SWOT_L2_LR_SSH_WindWave_033_353_20250531T112541_20250531T121709...
-    \"\"\"
+    """
     matches = re.findall(r'(\d{8}T\d{6})', filename)
     if len(matches) >= 2:
         start = datetime.datetime.strptime(matches[0], "%Y%m%dT%H%M%S")
@@ -39,9 +39,9 @@ def extract_times_from_swot_filename(filename: str) -> Tuple[Optional[int], Opti
     return None, None
 
 def parse_wv_metadata(filepath: str) -> Dict[str, Any]:
-    \"\"\"
+    """
     Extract timestamp and spatial footprint from S1 WV-L2F netCDF file.
-    \"\"\"
+    """
     filename = os.path.basename(filepath)
     timestamp = None
     footprint = None
@@ -73,9 +73,9 @@ def parse_wv_metadata(filepath: str) -> Dict[str, Any]:
     }
 
 def parse_swot_metadata(filepath: str) -> Dict[str, Any]:
-    \"\"\"
+    """
     Extract timestamps and spatial footprint from SWOT L2 WindWave netCDF file.
-    \"\"\"
+    """
     filename = os.path.basename(filepath)
     start_time = None
     end_time = None
@@ -120,10 +120,10 @@ def parse_swot_metadata(filepath: str) -> Dict[str, Any]:
     }
 
 def is_match(s1_meta: Dict[str, Any], swot_meta: Dict[str, Any], time_threshold_min: int = 10) -> bool:
-    \"\"\"
+    """
     Check if S1 and SWOT records match temporally (S1 within SWOT window +/- threshold) 
     and spatially (intersect).
-    \"\"\"
+    """
     t_s1 = s1_meta["timestamp"]
     t_start = swot_meta["start_time"]
     t_end = swot_meta["end_time"]
@@ -144,10 +144,9 @@ def is_match(s1_meta: Dict[str, Any], swot_meta: Dict[str, Any], time_threshold_
     return True
 
 def generate_stac_item(s1_meta: Dict[str, Any], swot_meta: Dict[str, Any]) -> Item:
-    \"\"\"
+    """
     Create a STAC item representing the matchup.
-    \"\"\"
-    # Get date info for ID and folder structure (S1 is taken as reference)
+    """
     import numpy as np
     t_s1 = np.datetime64(s1_meta["timestamp"], 's')
     swot_formated_date, year, month, day = get_swot_date_info(t_s1)
@@ -156,7 +155,6 @@ def generate_stac_item(s1_meta: Dict[str, Any], swot_meta: Dict[str, Any]) -> It
     bbox = list(s1_meta["footprint"].bounds)
     stac_time = datetime.datetime.fromtimestamp(s1_meta["timestamp"])
 
-    # ID following the project's existing standard: matchup_{sar_safe}_SWOT_KaRin_{date}
     item_id = f"matchup_{s1_meta['filename'].replace('.nc', '')}_SWOT_KaRin_{swot_formated_date}"
 
     item = Item(id=item_id, 
@@ -164,9 +162,7 @@ def generate_stac_item(s1_meta: Dict[str, Any], swot_meta: Dict[str, Any]) -> It
                 bbox=bbox,
                 datetime=stac_time)
     
-    # a la convert_matchups_nc_to_stac.py properties
     s1_parts = s1_meta["filename"].split("_")
-    # Simplified ptype for WV files (usually OCN/L2F)
     ptype = "OCN" if "OCN" in s1_meta["filename"] else "WV"
     
     item.properties.update({
@@ -179,7 +175,7 @@ def generate_stac_item(s1_meta: Dict[str, Any], swot_meta: Dict[str, Any]) -> It
         "sarmatchup:other_id": swot_meta["filename"].replace(".nc", ""),
         "sarmatchup:other_local_path": swot_meta["filepath"],
         "sarmatchup:overlap_percentage": calculate_overlap_percentage(s1_meta["footprint"], swot_meta["footprint"]),
-        "sarmatchup:lib_version": "0.1.0-alpha", # can be updated with s1swotcolocs.__version__ if available
+        "sarmatchup:lib_version": "0.1.0-alpha",
     })
 
     item.assets["s1_wv"] = Asset(href=s1_meta["filepath"])
@@ -188,9 +184,9 @@ def generate_stac_item(s1_meta: Dict[str, Any], swot_meta: Dict[str, Any]) -> It
     return item
 
 def find_matchups(wv_dir: str, swot_dir: str, config: Dict[str, Any]) -> List[Item]:
-    \"\"\"
+    """
     Main entry point to scan directories and return list of matched STAC items.
-    \"\"\"
+    """
     import glob
     matches = []
     time_threshold = config.get("TIME_THRESHOLD_MIN", 10)
@@ -201,14 +197,14 @@ def find_matchups(wv_dir: str, swot_dir: str, config: Dict[str, Any]) -> List[It
     wv_metas = [parse_wv_metadata(f) for f in wv_files]
     swot_metas = [parse_swot_metadata(f) for f in swot_files]
 
-    for s1 in la l_wv_metas: # Fix typo here (la l_)
+    for s1 in wv_metas:
         for swot in swot_metas:
             if is_match(s1, swot, time_threshold):
                 matches.append(generate_stac_item(s1, swot))
                 
     return matches
 
-if __name__ == \"__main__\":
+if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("--wv_dir", required=True)
@@ -222,5 +218,3 @@ if __name__ == \"__main__\":
     import json
     with open(args.output, "w") as f:
         json.dump([item.to_dict() for item in results], f, indent=2)
-
-
