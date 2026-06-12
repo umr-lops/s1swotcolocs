@@ -8,6 +8,8 @@ from pystac import Item, Asset
 import numpy as np
 import re
 
+from s1swotcolocs.utils import calculate_overlap_percentage, get_swot_date_info
+
 def extract_time_from_wv_filename(filename: str) -> Optional[int]:
     \"\"\"
     Extracts timestamp from S1 WV filename format: 
@@ -145,15 +147,41 @@ def generate_stac_item(s1_meta: Dict[str, Any], swot_meta: Dict[str, Any]) -> It
     \"\"\"
     Create a STAC item representing the matchup.
     \"\"\"
+    # Get date info for ID and folder structure (S1 is taken as reference)
+    import numpy as np
+    t_s1 = np.datetime64(s1_meta["timestamp"], 's')
+    swot_formated_date, year, month, day = get_swot_date_info(t_s1)
+    
     geometry = s1_meta["footprint"].__geo_interface__
     bbox = list(s1_meta["footprint"].bounds)
     stac_time = datetime.datetime.fromtimestamp(s1_meta["timestamp"])
 
-    item = Item(id=f"matchup-{s1_meta['filename']}-{swot_meta['filename']}", 
+    # ID following the project's existing standard: matchup_{sar_safe}_SWOT_KaRin_{date}
+    item_id = f"matchup_{s1_meta['filename'].replace('.nc', '')}_SWOT_KaRin_{swot_formated_date}"
+
+    item = Item(id=item_id, 
                 geometry=geometry,
                 bbox=bbox,
                 datetime=stac_time)
     
+    # a la convert_matchups_nc_to_stac.py properties
+    s1_parts = s1_meta["filename"].split("_")
+    # Simplified ptype for WV files (usually OCN/L2F)
+    ptype = "OCN" if "OCN" in s1_meta["filename"] else "WV"
+    
+    item.properties.update({
+        "sarmatchup:sar_platform": "sentinel-1",
+        "sarmatchup:sar_instrument_mode": "WV",
+        "sarmatchup:sar_product_type": ptype,
+        "sarmatchup:sar_safe": s1_meta["filename"],
+        "sarmatchup:other_instrument": "swot KaRin",
+        "sarmatchup:other_type": "swath_altimeter",
+        "sarmatchup:other_id": swot_meta["filename"].replace(".nc", ""),
+        "sarmatchup:other_local_path": swot_meta["filepath"],
+        "sarmatchup:overlap_percentage": calculate_overlap_percentage(s1_meta["footprint"], swot_meta["footprint"]),
+        "sarmatchup:lib_version": "0.1.0-alpha", # can be updated with s1swotcolocs.__version__ if available
+    })
+
     item.assets["s1_wv"] = Asset(href=s1_meta["filepath"])
     item.assets["swot_l2"] = Asset(href=swot_meta["filepath"])
     
@@ -173,7 +201,7 @@ def find_matchups(wv_dir: str, swot_dir: str, config: Dict[str, Any]) -> List[It
     wv_metas = [parse_wv_metadata(f) for f in wv_files]
     swot_metas = [parse_swot_metadata(f) for f in swot_files]
 
-    for s1 in wv_metas:
+    for s1 in la l_wv_metas: # Fix typo here (la l_)
         for swot in swot_metas:
             if is_match(s1, swot, time_threshold):
                 matches.append(generate_stac_item(s1, swot))
@@ -194,4 +222,5 @@ if __name__ == \"__main__\":
     import json
     with open(args.output, "w") as f:
         json.dump([item.to_dict() for item in results], f, indent=2)
+
 
