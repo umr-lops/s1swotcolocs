@@ -20,17 +20,21 @@ def extract_time_from_wv_filename(filename: str) -> Optional[int]:
         return int(dt.timestamp())
     return None
 
-def extract_time_from_swot_filename(filename: str) -> Optional[int]:
+def extract_times_from_swot_filename(filename: str) -> Tuple[Optional[int], Optional[int]]:
     \"\"\"
-    Extracts start timestamp from SWOT L2 filename format:
-    e.g., SWOT_L2_LR_SSH_WindWave_033_353_20250531T112541_...
+    Extracts start and end timestamps from SWOT L2 filename format:
+    e.g., SWOT_L2_LR_SSH_WindWave_033_353_20250531T112541_20250531T121709...
     \"\"\"
-    match = re.search(r'(\d{8}T\d{6})', filename)
-    if match:
-        time_str = match.group(1)
-        dt = datetime.datetime.strptime(time_str, "%Y%m%dT%H%M%S")
-        return int(dt.timestamp())
-    return None
+    matches = re.findall(r'(\d{8}T\d{6})', filename)
+    if len(matches) >= 2:
+        start = datetime.datetime.strptime(matches[0], "%Y%m%dT%H%M%S")
+        end = datetime.datetime.strptime(matches[1], "%Y%m%dT%H%M%S")
+        return int(start.timestamp()), int(end.timestamp())
+    elif len(matches) == 1:
+        t = datetime.datetime.strptime(matches[0], "%Y%m%dT%H%M%S")
+        val = int(t.timestamp())
+        return val, val
+    return None, None
 
 def parse_wv_metadata(filepath: str) -> Dict[str, Any]:
     \"\"\"
@@ -44,18 +48,16 @@ def parse_wv_metadata(filepath: str) -> Dict[str, Any]:
         with xr.open_dataset(filepath) as ds:
             if 'time' in ds.coords:
                 t_val = ds['time'].values[0]
-                # Handle numpy datetime64
                 if hasattr(t_val, 'astype'):
                     timestamp = np.datetime64(t_val).astype('datetime64[s]').astype(int)
                 else:
-                    timestamp = t_val
+                    timestamp = int(t_val)
 
             if 'latitude' in ds.coords and 'longitude' in ds.coords:
                 lat = ds['latitude'].values
                 lon = ds['longitude'].values
                 footprint = box(float(lon.min()), float(lat.min()), float(lon.max()), float(lat.max()))
-    except Exception as e:
-        # Log error or handle it; fallback to filename
+    except Exception:
         pass
 
     if timestamp is None:
@@ -70,58 +72,67 @@ def parse_wv_metadata(filepath: str) -> Dict[str, Any]:
 
 def parse_swot_metadata(filepath: str) -> Dict[str, Any]:
     \"\"\"
-    Extract timestamp and spatial footprint from SWOT L2 WindWave netCDF file.
+    Extract timestamps and spatial footprint from SWOT L2 WindWave netCDF file.
     \"\"\"
     filename = os.path.basename(filepath)
-    timestamp = None
+    start_time = None
+    end_time = None
     footprint = None
 
     try:
         with xr.open_dataset(filepath) as ds:
-            # Handle longitude shift (Standard in this repo for SWOT)
-            if 'longitude' in ds.coords:
-                lon = ds['longitude'].values
-                # Adjust 0-360 to -180 to 180 if necessary
-                lon = np.where(lon >= 180, lon - 360, lon)
-                
             if 'time' in ds.coords:
-                t_val = ds['time'].values[0]
-                if hasattr(t_val, 'astype'):
-                    timestamp = np.datetime64(t_val).astype('datetime64[s]').astype(int)
-                else:
-                    timestamp = t_val
+                t_vals = ds['time'].values
+                if len(t_vals) >= 1:
+                    s_val = t_vals[0]
+                    if hasattr(s_val, 'astype'):
+                        start_time = np.datetime64(s_val).astype('datetime64[s]').astype(int)
+                    else:
+                        start_time = int(s_val)
+                if len(t_vals) > 1:
+                    e_val = t_vals[-1]
+                    if hasattr(e_val, 'astype'):
+                        end_time = np.datetime64(e_val).astype('datetime64[s]').astype(int)
+                    else:
+                        end_time = int(e_val)
 
             if 'latitude' in ds.coords and 'longitude' in ds.coords:
                 lat = ds['latitude'].values
-                # use the corrected lon from above
-                lon_corr = np.where(ds['longitude'].values >= 180, ds['longitude'].values - 360, ds['longitude'].values)
+                lon = ds['longitude'].values
+                lon_corr = np.where(lon >= 180, lon - 360, lon)
                 footprint = box(float(lon_corr.min()), float(lat.min()), float(lon_corr.max()), float(lat.max()))
-    except Exception as e:
+    except Exception:
         pass
 
-    if timestamp is None:
-        timestamp = extract_time_from_swot_filename(filename)
+    if start_time is None or end_time is None:
+        s, e = extract_times_from_swot_filename(filename)
+        if start_time is None: start_time = s
+        if end_time is None: end_time = e
 
     return {
         "filepath": filepath,
-        "timestamp": timestamp,
+        "start_time": start_time,
+        "end_time": end_time,
         "footprint": footprint,
         "filename": filename
     }
 
 def is_match(s1_meta: Dict[str, Any], swot_meta: Dict[str, Any], time_threshold_min: int = 10) -> bool:
     \"\"\"
-    Check if S1 and SWOT records match temporally (< threshold) and spatially (intersect).
+    Check if S1 and SWOT records match temporally (S1 within SWOT window +/- threshold) 
+    and spatially (intersect).
     \"\"\"
-    if s1_meta["timestamp"] is None or swot_meta["timestamp"] is None:
+    t_s1 = s1_meta["timestamp"]
+    t_start = swot_meta["start_time"]
+    t_end = swot_meta["end_time"]
+
+    if t_s1 is None or t_start is None or t_end is None:
         return False
 
-    # Temporal check
-    time_diff = abs(s1_meta["timestamp"] - swot_meta["timestamp"])
-    if time_diff > (time_threshold_min * 60):
+    threshold_sec = time_threshold_min * 60
+    if not (t_start - threshold_sec <= t_s1 <= t_end + threshold_sec):
         return False
 
-    # Spatial check
     if s1_meta["footprint"] is None or swot_meta["footprint"] is None:
         return False
     
@@ -134,10 +145,8 @@ def generate_stac_item(s1_meta: Dict[str, Any], swot_meta: Dict[str, Any]) -> It
     \"\"\"
     Create a STAC item representing the matchup.
     \"\"\"
-    # Use s1 footprint as primary geometry for the matchup record
     geometry = s1_meta["footprint"].__geo_interface__
     bbox = list(s1_meta["footprint"].bounds)
-    
     stac_time = datetime.datetime.fromtimestamp(s1_meta["timestamp"])
 
     item = Item(id=f"matchup-{s1_meta['filename']}-{swot_meta['filename']}", 
@@ -161,7 +170,6 @@ def find_matchups(wv_dir: str, swot_dir: str, config: Dict[str, Any]) -> List[It
     wv_files = glob.glob(os.path.join(wv_dir, "**/*.nc"), recursive=True)
     swot_files = glob.glob(os.path.join(swot_dir, "**/*.nc"), recursive=True)
 
-    # Pre-parse metadata to avoid repeated file reads
     wv_metas = [parse_wv_metadata(f) for f in wv_files]
     swot_metas = [parse_swot_metadata(f) for f in swot_files]
 
@@ -186,3 +194,4 @@ if __name__ == \"__main__\":
     import json
     with open(args.output, "w") as f:
         json.dump([item.to_dict() for item in results], f, indent=2)
+
