@@ -23,7 +23,8 @@ treat_one_day_wrapper:
 
 No other logic has been changed.
 """
-
+import pyogrio
+import fiona  
 import collections
 import datetime
 import glob
@@ -33,7 +34,9 @@ import sys
 import time
 import traceback
 import warnings
+from pathlib import Path
 
+from shapely import wkt
 import numpy as np
 import pandas as pd
 import xarray as xr
@@ -49,8 +52,14 @@ import argparse
 
 import cdsodatacli
 import cdsodatacli.query
+from eodms_rapi import EODMSRAPI
 import s1swotcolocs
-from s1swotcolocs.utils import get_conf_content
+from s1swotcolocs.utils import (
+    get_conf_content,
+    get_netcdf_attribute,
+    normalize_mission,
+    parse_safe_name,
+)
 from s1swotcolocs.check_lonlat_polygon_extent import (
     check_longitude_smaller_than_latitude_extent,
 )
@@ -130,19 +139,28 @@ def is_nearly_collinear(points: np.ndarray, threshold: float = 0.05) -> bool:
 # ---------------------------------------------------------------------------
 # Core processing functions
 # ---------------------------------------------------------------------------
+COLLECTIONS = {
+    'S1'  : 'SENTINEL-1',
+    'RCM' : 'RCMImageProducts',
+    'RS2' : 'Radarsat2RawProducts'
+}
+
+def _get_collection(m):
+    return COLLECTIONS.get(m, None)
 
 
 def treat_a_clean_piece_of_swot_orbit(
-    swotpiece, points, onedsswot, mode, producttype, delta_t_max, cpt
+    swotpiece, points, swotsub, mission, mode, producttype, delta_t_max, cpt
 ):
     """
     :param swotpiece: shapely.geometry.Polygon simplified, not crossing antimeridian
     :param points: 2D matrix with lon and lat from SWOT
-    :param onedsswot: xarray.Dataset SWOT L3
+    :param swotsub: sub part of a SWOT xarray.Dataset 
+    :parap mission: str "S1" or "RCM" or "RS2"
     :return: (GeoDataFrame, cpt)
     """
     app_logger.debug("swotpiece : %s", swotpiece)
-    original_filename = os.path.basename(onedsswot.encoding["source"])
+    original_filename = os.path.basename(swotsub.encoding["source"])
     lonmin = np.amin(swotpiece.exterior.xy[0])
     lonmax = np.amax(swotpiece.exterior.xy[0])
     latmin = np.amin(swotpiece.exterior.xy[1])
@@ -154,12 +172,12 @@ def treat_a_clean_piece_of_swot_orbit(
     dd, idx_south = tree.query([lonmin, latmin], k=1)
     app_logger.debug("idx_north : %s", idx_north)
     app_logger.debug("idx_south : %s", idx_south)
-    num_line_idx_north, _ = np.unravel_index(idx_north, onedsswot["longitude"].shape)
-    num_line_idx_south, _ = np.unravel_index(idx_south, onedsswot["longitude"].shape)
+    num_line_idx_north, _ = np.unravel_index(idx_north, swotsub["longitude"].shape)
+    num_line_idx_south, _ = np.unravel_index(idx_south, swotsub["longitude"].shape)
     app_logger.debug("num_line_idx_north : %s", num_line_idx_north)
     app_logger.debug("num_line_idx_south : %s", num_line_idx_south)
-    time_north = onedsswot["time"].isel(num_lines=num_line_idx_north).values
-    time_south = onedsswot["time"].isel(num_lines=num_line_idx_south).values
+    time_north = swotsub["time"].isel(num_lines=num_line_idx_north).values
+    time_south = swotsub["time"].isel(num_lines=num_line_idx_south).values
     app_logger.debug("time_north %s", time_north)
     app_logger.debug("time_south %s", time_south)
 
@@ -192,7 +210,7 @@ def treat_a_clean_piece_of_swot_orbit(
             "start_datetime": [sta],
             "end_datetime": [sto],
             "geometry": [swotpiece],
-            "collection": ["SENTINEL-1"],
+            "collection": [_get_collection(mission)],
             "name": [None],
             "sensormode": [mode],
             "producttype": [producttype],
@@ -272,6 +290,7 @@ def slice_swot(
     cpt,
     max_area_size,
     delta_hours=6,
+    mission="S1",
     mode="IW",
     producttype="SLC",
     tolerance_simplification=0.1,
@@ -352,7 +371,8 @@ def slice_swot(
                         gdf, cpt = treat_a_clean_piece_of_swot_orbit(
                             subsubpartswot,
                             points,
-                            onedsswot,
+                            swotsub,
+                            mission,
                             mode,
                             producttype,
                             delta_t_max,
@@ -367,7 +387,8 @@ def slice_swot(
                     gdf, cpt = treat_a_clean_piece_of_swot_orbit(
                         subpartswot,
                         points,
-                        onedsswot,
+                        swotsub,
+                        mission,
                         mode,
                         producttype,
                         delta_t_max,
@@ -396,7 +417,8 @@ def slice_swot(
                     gdf, cpt = treat_a_clean_piece_of_swot_orbit(
                         subsubpartswot,
                         points,
-                        onedsswot,
+                        swotsub,
+                        mission,
                         mode,
                         producttype,
                         delta_t_max,
@@ -411,7 +433,8 @@ def slice_swot(
                 gdf, cpt = treat_a_clean_piece_of_swot_orbit(
                     subpartswot,
                     points,
-                    onedsswot,
+                    swotsub,
+                    mission,
                     mode,
                     producttype,
                     delta_t_max,
@@ -428,6 +451,7 @@ def get_swot_geoloc(
     one_swot_file,
     max_area_size,
     delta_hours=6,
+    mission="S1",
     mode="IW",
     producttype="SLC",
     cpt=None,
@@ -481,6 +505,7 @@ def get_swot_geoloc(
             cpt=cpt,
             max_area_size=max_area_size,
             delta_hours=delta_hours,
+            mission=mission,
             mode=mode,
             producttype=producttype,
             tolerance_simplification=tolerance_simplification,
@@ -504,13 +529,41 @@ def do_cdse_query(gdf, mini_ocean=10, cache_dir=None):
         gdf,
         min_sea_percent=mini_ocean,
         timedelta_slice=datetime.timedelta(days=4),
-        cache_dir=None,
+        cache_dir=cache_dir,
     )
     return collected_data_norm
 
 
-def save_netcdf_file_per_swot_piece_orbit_core(
-    cdse_output, swot_gdf, fpath_out, delta_t_max, cpt
+def do_eodms_query(gdf, eodmsrapi, feat_op='overlaps'):
+    if pd.isnull(gdf["start_datetime"].iloc[0]) or pd.isnull(
+        gdf["end_datetime"].iloc[0]
+    ):
+        app_logger.warning(
+            "Skipping EODMS query for %s: NaT start or end datetime",
+            gdf["id_query"].iloc[0],
+        )
+        return None
+    
+    eodmsrapi.search(
+        gdf['collection'].iloc[0],
+        dates=[{
+            "start": gdf["start_datetime"].iloc[0],
+            "end": gdf["end_datetime"].iloc[0]
+            }],
+        features=[(feat_op, gdf['geometry'].iloc[0])],
+        max_results=100,
+    )
+
+    df = pd.DataFrame(eodmsrapi.get_results("full"))
+    if len(df)==0:
+        return None
+    
+    df["id_original_query"] = gdf["id_query"].iloc[0]
+    return df
+
+
+def save_netcdf_file_per_swot_piece_orbit_core_s1(
+    query_output, swot_gdf, fpath_out, delta_t_max, cpt
 ):
     """
     Save the result for one SWOT query matching one or more S1 product(s).
@@ -524,30 +577,30 @@ def save_netcdf_file_per_swot_piece_orbit_core(
     all_start_SAR = []
     all_delta_times = []
 
-    start_time_strings = cdse_output["ContentDate"].str["Start"]
-    cdse_output["Start_dt"] = pd.to_datetime(start_time_strings, utc=True)
+    start_time_strings = query_output["ContentDate"].str["Start"]
+    query_output["Start_dt"] = pd.to_datetime(start_time_strings, utc=True)
 
-    for sasa in range(len(cdse_output["geometry"])):
-        all_SAR_polygones.append("%s" % cdse_output["geometry"].iloc[sasa])
-        SAR_start_slice = cdse_output["Start_dt"].iloc[sasa]
+    for sasa in range(len(query_output["geometry"])):
+        all_SAR_polygones.append("%s" % query_output["geometry"].iloc[sasa])
+        SAR_start_slice = query_output["Start_dt"].iloc[sasa]
         delta_diff_time = SWOT_start_piece - SAR_start_slice
         delta_diff_time_minutes = delta_diff_time / np.timedelta64(1, "m")
         all_start_SAR.append(SAR_start_slice.tz_localize(None))
         all_delta_times.append(delta_diff_time_minutes)
-        all_SWOT_fpath.append(cdse_output["id_original_query"].iloc[sasa].split(" ")[1])
+        all_SWOT_fpath.append(query_output["id_original_query"].iloc[sasa].split(" ")[1])
 
     all_start_SAR = np.array(all_start_SAR).astype("datetime64[s]")
     SWOT_start_piece = np.array(SWOT_start_piece.tz_localize(None)).astype(
         "datetime64[s]"
     )
-    sar_names = np.array(cdse_output["Name"].values, dtype=object)
+    sar_names = np.array(query_output["Name"].values, dtype=object)
     all_start_SAR = np.array(all_start_SAR).astype("datetime64[s]")
     all_delta_times = np.array(all_delta_times, dtype=np.float64)
     SWOT_start_piece = np.array(SWOT_start_piece).astype("datetime64[s]")
 
     colocds = xr.Dataset()
     colocds["sar_safe_name"] = xr.DataArray(
-        cdse_output["Name"].values,
+        query_output["Name"].values,
         dims="sar_start_time_slice",
         coords={"sar_start_time_slice": all_start_SAR},
         attrs={"description": "name of the SAFE Sentinel-1 products colocated"},
@@ -598,6 +651,111 @@ def save_netcdf_file_per_swot_piece_orbit_core(
     return cpt
 
 
+def save_netcdf_file_per_swot_piece_orbit_core_rsat(
+    query_output, swot_gdf, fpath_out, delta_t_max, cpt
+):
+    """
+    Save the result for one SWOT query matching one or more RADARSAT product(s).
+    """
+    SWOT_start_piece = pd.to_datetime(swot_gdf["id_query"][0].split(" ")[2])
+    SWOT_start_piece = SWOT_start_piece.tz_localize("UTC")
+    swot_polygon = "%s" % swot_gdf["geometry"][0]
+
+    all_SAR_polygones = []
+    all_SWOT_fpath = []
+    all_start_SAR = []
+    all_delta_times = []
+
+    query_output["Start_dt"] = pd.to_datetime(query_output["acquisitionStartDate"], utc=True)
+
+    for sasa in range(len(query_output["geometry"])):
+        all_SAR_polygones.append("%s" % query_output["wktGeometry"].iloc[sasa])
+        SAR_start_slice = query_output["Start_dt"].iloc[sasa]
+        delta_diff_time = SWOT_start_piece - SAR_start_slice
+        delta_diff_time_minutes = delta_diff_time / np.timedelta64(1, "m")
+        all_start_SAR.append(SAR_start_slice.tz_localize(None))
+        all_delta_times.append(delta_diff_time_minutes)
+        all_SWOT_fpath.append(query_output["id_original_query"].iloc[sasa].split(" ")[1])
+
+    all_start_SAR = np.array(all_start_SAR).astype("datetime64[s]")
+    SWOT_start_piece = np.array(SWOT_start_piece.tz_localize(None)).astype(
+        "datetime64[s]"
+    )
+    sar_names = np.array(query_output["title"].values, dtype=object)
+    all_start_SAR = np.array(all_start_SAR).astype("datetime64[s]")
+    all_delta_times = np.array(all_delta_times, dtype=np.float64)
+    SWOT_start_piece = np.array(SWOT_start_piece).astype("datetime64[s]")
+
+    colocds = xr.Dataset()
+    colocds["sar_safe_name"] = xr.DataArray(
+        sar_names,
+        dims="sar_start_time_slice",
+        coords={"sar_start_time_slice": all_start_SAR},
+        attrs={"description": "name of the RADARSAT products colocated"},
+    )
+    colocds["filepath_swot"] = xr.DataArray(
+        all_SWOT_fpath,
+        dims="sar_start_time_slice",
+        attrs={"description": "file paths of SWOT products colocated"},
+    )
+    colocds["delta_diff_time"] = xr.DataArray(
+        all_delta_times,
+        dims="sar_start_time_slice",
+        attrs={"description": "delta time SWOT - SAR in minutes"},
+    )
+    colocds["SWOT_start_time_slice"] = xr.DataArray(
+        SWOT_start_piece, attrs={"description": "SWOT slice start date"}
+    )
+    colocds["swot_polygon"] = xr.DataArray(
+        swot_polygon, attrs={"description": "polygon of SWOT piece of orbit"}
+    )
+    colocds["sar_polygon"] = xr.DataArray(
+        all_SAR_polygones,
+        dims="sar_start_time_slice",
+        attrs={"description": "polygons of SAR products"},
+    )
+    # Extra metadata specific to this API
+    colocds["sar_product_id"] = xr.DataArray(
+        query_output["productId"].values,
+        dims="sar_start_time_slice",
+        attrs={"description": "product ID from RADARSAT API"},
+    )
+    colocds["sar_satellite_id"] = xr.DataArray(
+        query_output["satelliteId"].values,
+        dims="sar_start_time_slice",
+        attrs={"description": "satellite ID (e.g. RCM-1, RCM-2, RCM-3)"},
+    )
+    colocds["sar_beam_mnemonic"] = xr.DataArray(
+        query_output["beamMnemonic"].values,
+        dims="sar_start_time_slice",
+        attrs={"description": "beam mnemonic of the SAR acquisition"},
+    )
+    colocds["sar_polarization"] = xr.DataArray(
+        query_output["polarization"].values,
+        dims="sar_start_time_slice",
+        attrs={"description": "polarization mode of the SAR acquisition"},
+    )
+
+    colocds.attrs["swotcolocs_python_lib_version"] = s1swotcolocs.__version__
+    colocds.attrs["searching_windows_width_in_hours"] = delta_t_max
+
+    if os.path.exists(fpath_out):
+        logging.info("remove the existing file")
+        os.remove(fpath_out)
+        cpt["file_replaced"] += 1
+    else:
+        logging.debug("file does not exist -> brand-new file on disk")
+        cpt["new_file"] += 1
+
+    if not os.path.exists(os.path.dirname(fpath_out)):
+        os.makedirs(os.path.dirname(fpath_out), mode=0o775)
+
+    colocds.to_netcdf(fpath_out, engine="h5netcdf")
+    os.chmod(fpath_out, 0o664)
+    app_logger.info("coloc file created : %s", fpath_out)
+    return cpt
+
+
 def get_swot_date_info(SWOT_start_piece):
     """
     Arguments:
@@ -617,13 +775,24 @@ def get_swot_date_info(SWOT_start_piece):
 
 
 def save_meta_coloc_output(
-    cddesS1outputs, SWOTgdfs, dir_output, delta_t_max, cpt, disable_tqdm=False
+    query_outputs, SWOTgdfs, dir_output, mission, mode, delta_t_max, cpt, disable_tqdm=False
 ):
-    assert len(cddesS1outputs) == len(SWOTgdfs)
-    for xxi in tqdm(range(len(cddesS1outputs)), disable=disable_tqdm):
-        one_cds_output = cddesS1outputs[xxi]
+    save_func = {
+        "S1":  save_netcdf_file_per_swot_piece_orbit_core_s1,
+        "RCM": save_netcdf_file_per_swot_piece_orbit_core_rsat,
+        "RS2": save_netcdf_file_per_swot_piece_orbit_core_rsat,
+    }.get(mission)
+
+    if save_func is None:
+        raise ValueError(f"Mission '{mission}' not supported. Expected one of: S1, RCM, RS2")
+
+    if mission in ["RCM", "RS2"]:
+        mode = "all"
+    assert len(query_outputs) == len(SWOTgdfs)
+    for xxi in tqdm(range(len(query_outputs)), disable=disable_tqdm):
+        one_output = query_outputs[xxi]
         swot_gdf = SWOTgdfs[xxi]
-        if one_cds_output is not None:
+        if one_output is not None:
             SWOT_start_piece = np.datetime64(swot_gdf["id_query"][0].split(" ")[2])
             swot_formated_date, year, month, day = get_swot_date_info(SWOT_start_piece)
             fpath_out = os.path.join(
@@ -631,11 +800,11 @@ def save_meta_coloc_output(
                 "%s" % year,
                 "%s" % month,
                 "%s" % day,
-                "coloc_SWOT_L3_Sentinel-1_IW_%s.nc" % swot_formated_date,
+                f"coloc_SWOT_L3_{mission}_{mode}_{swot_formated_date}.nc",
             )
             app_logger.info("fpath_out: %s", fpath_out)
-            cpt = save_netcdf_file_per_swot_piece_orbit_core(
-                cdse_output=one_cds_output,
+            cpt = save_func(
+                query_output=one_output,
                 swot_gdf=swot_gdf,
                 fpath_out=fpath_out,
                 delta_t_max=delta_t_max,
@@ -646,12 +815,12 @@ def save_meta_coloc_output(
             cpt["no_coloc"] += 1
 
     app_logger.info(
-        "number of coloc files written : %i/%i", cpt["written"], len(cddesS1outputs)
+        "number of coloc files written : %i/%i", cpt["written"], len(query_outputs)
     )
     app_logger.info(
         "number of SWOT piece of orbit without S1 coloc : %i/%i",
         cpt["no_coloc"],
-        len(cddesS1outputs),
+        len(query_outputs),
     )
     return cpt
 
@@ -661,11 +830,25 @@ def parse_args():
     parser.add_argument("--verbose", action="store_true", default=False)
     parser.add_argument("--day2treat", required=True, help="YYYYMMDD")
     parser.add_argument(
+        "--mission",
+        required=False,
+        choices=["S1", "RCM", "RS2"],
+        default="S1",
+        help="S1, RCM or RS2 [default=S1]",
+    )
+    parser.add_argument(
         "--mode",
         required=False,
         choices=["IW", "EW"],
         default="IW",
         help="IW or EW [default=IW]",
+    )
+    parser.add_argument(
+        "--producttype",
+        required=False,
+        choices=["SLC", "GRD"],
+        default="SLC",
+        help="SLC or GRD [default=SLC]",
     )
     parser.add_argument(
         "--outputdir",
@@ -675,14 +858,246 @@ def parse_args():
     parser.add_argument("--conf", required=True, help="config file to use")
     return parser.parse_args()
 
+def _get_swot_intersecting_sar(swot_gdf, sar_footprint):
+    """
+    Return SWOT polygons that intersect the SAR footprint.
+
+    Parameters
+    ----------
+    swot_gdf : gpd.GeoDataFrame
+        GeoDataFrame of SWOT polygons.
+    sar_footprint : str or shapely.geometry
+        SAR footprint as WKT string or shapely geometry.
+
+    Returns
+    -------
+    gpd.GeoDataFrame
+        Subset of SWOT polygons intersecting the SAR footprint, or None if no intersection.
+    """
+    if isinstance(sar_footprint, str):
+        from shapely import wkt
+        sar_footprint = wkt.loads(sar_footprint)
+
+    sar_gdf = gpd.GeoDataFrame(geometry=[sar_footprint], crs="EPSG:4326")
+
+    intersecting = gpd.sjoin(
+        swot_gdf,
+        sar_gdf,
+        how="inner",
+        predicate="intersects",
+    )
+
+    if len(intersecting) == 0:
+        return None
+    
+    return intersecting
+
+
+def save_matchup(
+        swot_gdf_intersect_sar,
+        swot_dir,
+        sar_safe, 
+        sar_fp, 
+        sar_start,
+        delta_t_hours, 
+        sar_end=None, 
+        out_dir=None
+    ):
+    """
+    Save SWOT/SAR matchup results to a CSV file.
+
+    Parameters
+    ----------
+    swot_gdf_intersect_sar : gpd.GeoDataFrame
+        SWOT polygons intersecting the SAR footprint.
+    sar_safe : str
+        SAR SAFE filename (used as output filename).
+    sar_fp : shapely.geometry
+        SAR footprint geometry.
+    sar_start : datetime
+        SAR acquisition start time.
+    sar_end : datetime, optional
+        SAR acquisition end time.
+    out_dir : str or Path, optional
+        Output directory. If None, saves in the current working directory.
+    """
+    if out_dir is None:
+        out_dir = Path.cwd()
+        app_logger.warning("No output directory provided, saving in current working directory: %s", out_dir)
+    else:
+        out_dir = Path(out_dir)
+        if not out_dir.exists():
+            app_logger.info("Output directory does not exist, creating it: %s", out_dir)
+            out_dir.mkdir(parents=True, exist_ok=True)
+        elif not out_dir.is_dir():
+            raise ValueError(f"out_dir exists but is not a directory: {out_dir}")
+
+    rows = []
+    for _, row in swot_gdf_intersect_sar.iterrows():
+        swot_filename = Path(swot_dir) / row["id_query"].split(" ")[1]
+        rows.append({
+            "swot_filename": swot_filename,
+            "swot_start":    row["start_datetime"],
+            "swot_end":      row["end_datetime"],
+            "swot_geometry": row["geometry"].wkt,
+            "sar_safe":      sar_safe,
+            "sar_start":     sar_start,
+            "sar_end":       sar_end,
+            "sar_geometry":  sar_fp.wkt,
+            "delta_t_hours": delta_t_hours,
+        })
+
+    df_out = pd.DataFrame(rows)
+
+    safe_name = Path(sar_safe).stem
+    fpath_out = out_dir / f"matchup_SAR-SWOT_{safe_name}_dt{delta_t_hours}h.csv"
+
+    df_out.to_csv(fpath_out, index=False)
+    app_logger.info("Matchup saved : %s", fpath_out)
+
+    return fpath_out
+
+
+def treat_one_safe(safe, confpath, disable_tqdm=False, dev=False):
+
+    # --- Load config ---
+    conf = get_conf_content(confpath)
+    SWOTDIR = Path(conf["SWOT_L2_AVISO_DIR"])
+    DT = conf["DELTA_HOURS"]
+
+    # --- Parse SAR SAFE metadata ---
+    safe_info = parse_safe_name(safe)
+    sar_start = safe_info['startdate'] + safe_info['starttime']
+    sar_start = datetime.datetime.strptime(sar_start, "%Y%m%d%H%M%S")
+    mission = normalize_mission(safe_info['mission_id'])
+    mode = safe_info['mode']
+    producttype = safe_info['type'] if mission == 'S1' else 'GRD'
+
+    app_logger.info("Processing SAFE : %s | start=%s", Path(safe).stem, sar_start)
+
+    # --- Define time window around SAR acquisition ---
+    time_delta = datetime.timedelta(hours=DT)
+    t1 = sar_start - time_delta
+    t2 = sar_start + time_delta
+    app_logger.info("Time window : %s  -->  %s  (+/- %sh)", t1, t2, DT)
+
+    # --- Find SWOT files matching the acquisition date ---
+    pattern = f"SWOT_L2_LR_SSH_WindWave_*{sar_start.strftime('_%Y%m%dT')}*.nc"
+    ncfiles = list(SWOTDIR.glob(pattern))
+    app_logger.info("SWOT files found before time filtering : %i", len(ncfiles))
+
+    # --- Filter SWOT files whose time range overlaps the SAR time window ---
+    lstswotfiles = []
+    for n in ncfiles:
+        parts = n.stem.split('_')
+        start = datetime.datetime.strptime(parts[7], "%Y%m%dT%H%M%S")
+        end   = datetime.datetime.strptime(parts[8], "%Y%m%dT%H%M%S")
+        if (start < t2) and (end > t1):
+            lstswotfiles.append(n)
+
+    app_logger.info("SWOT files retained after time filtering : %i", len(lstswotfiles))
+
+    if len(lstswotfiles) == 0:
+        app_logger.info("No SWOT files in time window, skipping SAFE : %s", os.path.basename(safe))
+        return
+
+    if dev:
+        app_logger.info("Development mode: restricting to first 2 SWOT files")
+        lstswotfiles = lstswotfiles[:2]
+
+    # --- Build SWOT GeoDataFrames from each SWOT file ---
+    app_logger.info("Building SWOT GeoDataFrames (+/- %sh)", DT)
+    SWOTgdfs = []
+    cpt = collections.defaultdict(int)
+    cpt["nbSWOTfiles"] = len(lstswotfiles)
+
+    for oneswotfile in tqdm(lstswotfiles, disable=disable_tqdm, desc="Processing SWOT files", unit="file"):
+        swot_distinct_gdfs_list, cpt = get_swot_geoloc(
+            oneswotfile,
+            delta_hours=0,  # time filtering is applied on the GDF afterwards
+            max_area_size=conf["MAX_AREA_SIZE"],
+            mission=mission,
+            mode=mode,
+            producttype=producttype,
+            cpt=cpt,
+            tolerance_simplification=conf["TOLERANCE_SIMPLIFICATION"],
+        )
+        SWOTgdfs += swot_distinct_gdfs_list
+
+    # --- Concatenate all GDFs and enforce WGS84 CRS ---
+    tmp = [gdf.set_crs("EPSG:4326", allow_override=True) for gdf in SWOTgdfs]
+    swot_gdf = gpd.GeoDataFrame(pd.concat(tmp, ignore_index=True), crs="EPSG:4326")
+    app_logger.info("Total SWOT polygons before time filtering : %i", len(swot_gdf))
+
+    # --- Filter SWOT polygons to the SAR time window ---
+    swot_gdf_filtered = swot_gdf[
+        (swot_gdf["start_datetime"] <= t2) & (swot_gdf["end_datetime"] >= t1)
+    ]
+    app_logger.info("SWOT polygons after time filtering : %i", len(swot_gdf_filtered))
+
+    if len(swot_gdf_filtered) == 0:
+        app_logger.info("No SWOT polygons in time window, skipping SAFE : %s", os.path.basename(safe))
+        return
+
+    # --- Extract SAR footprint ---
+    sar_ncfile = list(Path(safe).rglob('*.nc'))[0]
+    sar_fp = wkt.loads(get_netcdf_attribute(sar_ncfile, "main_footprint"))
+    app_logger.info("SAR footprint loaded from : %s", sar_ncfile.name)
+
+    # --- Fix antimeridian crossing if needed ---
+    sar_fp_fixed, ok = _safe_fix_polygon(sar_fp, cpt, context=os.path.basename(safe))
+    if not ok:
+        app_logger.warning("Could not fix SAR footprint antimeridian crossing, using original polygon.")
+        sar_fp_fixed = sar_fp
+
+    # --- Handle MultiPolygon case (SAR footprint split at antimeridian) ---
+    if sar_fp_fixed.geom_type == "MultiPolygon":
+        app_logger.info("SAR footprint is a MultiPolygon after antimeridian fix — processing each sub-polygon separately.")
+        sar_subpolygons = list(sar_fp_fixed.geoms)
+    else:
+        sar_subpolygons = [sar_fp_fixed]
+
+    # --- Find SWOT polygons spatially intersecting the SAR footprint ---
+    swot_gdf_intersect_list = []
+    for sub_fp in sar_subpolygons:
+        result = _get_swot_intersecting_sar(swot_gdf_filtered, sub_fp)
+        if result is not None:
+            swot_gdf_intersect_list.append(result)
+
+    if len(swot_gdf_intersect_list) == 0:
+        app_logger.info("No SWOT polygons intersect the SAR footprint, skipping SAFE : %s", os.path.basename(safe))
+        return
+
+    swot_gdf_intersect_sar = gpd.GeoDataFrame(
+        pd.concat(swot_gdf_intersect_list, ignore_index=True), crs="EPSG:4326"
+    ).drop_duplicates()  # évite les doublons si un polygone SWOT intersecte plusieurs sous-polygones
+
+    app_logger.info("SWOT polygons intersecting SAR footprint : %i", len(swot_gdf_intersect_sar))
+
+    # --- Save matchups to CSV ---
+    save_matchup(
+        swot_gdf_intersect_sar=swot_gdf_intersect_sar,
+        swot_dir=SWOTDIR,
+        sar_safe=safe,
+        sar_fp=sar_fp,
+        sar_start=sar_start,
+        delta_t_hours=conf["DELTA_HOURS"],
+        sar_end=None,
+        out_dir=conf["HOST_META_COLOC_OUTPUT_DIR"],
+    )
+
+    return
+    
 
 def treat_one_day_wrapper(
-    day2treat, outputdir, mode, confpath, disable_tqdm=False, dev=False
+    day2treat, outputdir, mission, mode, producttype, confpath, disable_tqdm=False, dev=False
 ):
     """
     :param day2treat: str YYYYMMDD
     :param outputdir: str
+    :parap mission: str "S1" or "RCM" or "RS2"
     :param mode: str "IW" or "EW"
+    :param producttype: str "SLC" or "GRD"
     :param confpath: str full path of the config.yml
     :param disable_tqdm: bool
     :param dev: bool, True -> use a smaller subset of SWOT files for faster dev iterations
@@ -727,39 +1142,70 @@ def treat_one_day_wrapper(
             oneswotfile,
             delta_hours=conf["DELTA_HOURS"],
             max_area_size=conf["MAX_AREA_SIZE"],
+            mission=mission,
             mode=mode,
+            producttype=producttype,
             cpt=cpt,
             tolerance_simplification=conf["TOLERANCE_SIMPLIFICATION"],
         )
         SWOTgdfs += swot_distinct_gdfs_list
 
-    app_logger.info("GeoDataFrames prepared for CDSE queries: %s", cpt)
-    app_logger.info("nb GeoDataFrames: %i", len(SWOTgdfs))
+    query_outputs = []
 
-    cddesS1outputs = []
-    for ii in tqdm(range(len(SWOTgdfs)), disable=disable_tqdm):
-        gdf = SWOTgdfs[ii]
-        try:
-            res = do_cdse_query(gdf, mini_ocean=10, cache_dir=CACHE_CDSE)
-            if res is not None:
-                cpt["sentinel1_product_matching"] += len(res)
-        except ValueError:
-            # ── FIX: removed bare "raise ValueError" that crashed the whole day ──
-            # Log the problematic GDF and continue with the next one.
-            app_logger.error("problematic gdf: %s", gdf)
-            app_logger.error("traceback: %s", traceback.format_exc())
-            res = None
-            cpt["problematic_gdf"] += 1
+    if mission=='S1':
+        app_logger.info("GeoDataFrames prepared for CDSE queries: %s", cpt)
+        app_logger.info("nb GeoDataFrames: %i", len(SWOTgdfs))  
+        for ii in tqdm(range(len(SWOTgdfs)), disable=disable_tqdm):
+            gdf = SWOTgdfs[ii]
+            try:
+                res = do_cdse_query(gdf, mini_ocean=10, cache_dir=CACHE_CDSE)
+                if res is not None:
+                    cpt["sentinel1_product_matching"] += len(res)
+            except ValueError:
+                # ── FIX: removed bare "raise ValueError" that crashed the whole day ──
+                # Log the problematic GDF and continue with the next one.
+                app_logger.error("problematic gdf: %s", gdf)
+                app_logger.error("traceback: %s", traceback.format_exc())
+                res = None
+                cpt["problematic_gdf"] += 1
 
-        cddesS1outputs.append(res)
+            query_outputs.append(res)
 
-    app_logger.info("CDSE queries performed.")
+        app_logger.info("CDSE queries performed.")
+    
+    elif mission in ['RCM', 'RS2']:
+        app_logger.info("GeoDataFrames prepared for EODMS queries: %s", cpt)
+        app_logger.info("nb GeoDataFrames: %i", len(SWOTgdfs))
+        eodmsrapi = EODMSRAPI(
+            conf["EODMS"]["user_name"],
+            conf["EODMS"]["pswd"],
+        )
+        for ii in tqdm(range(len(SWOTgdfs)), disable=disable_tqdm):
+            gdf = SWOTgdfs[ii]
+            try:
+                res = do_eodms_query(gdf.to_wkt(), eodmsrapi, mission)
+                if res is not None:
+                    cpt[f"{mission}_product_matching"] += len(res)
+            except ValueError:
+                # ── FIX: removed bare "raise ValueError" that crashed the whole day ──
+                # Log the problematic GDF and continue with the next one.
+                app_logger.error("problematic gdf: %s", gdf)
+                app_logger.error("traceback: %s", traceback.format_exc())
+                res = None
+                cpt["problematic_gdf"] += 1
+
+            query_outputs.append(res)
+
+        app_logger.info("EODMS queries performed.")
+
 
     if len(SWOTgdfs) > 0:
         cpt = save_meta_coloc_output(
-            cddesS1outputs,
+            query_outputs,
             SWOTgdfs,
             dir_output=outputdir,
+            mission=mission,
+            mode=mode,
             delta_t_max=conf["DELTA_HOURS"],
             cpt=cpt,
             disable_tqdm=disable_tqdm,
@@ -784,7 +1230,9 @@ def main():
     cpt = treat_one_day_wrapper(
         day2treat=args.day2treat,
         outputdir=args.outputdir,
+        mission=args.mission,
         mode=args.mode,
+        producttype=args.producttype,
         confpath=args.conf,
         disable_tqdm=False,
     )
