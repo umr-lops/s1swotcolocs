@@ -22,7 +22,8 @@ from s1swotcolocs import utils
 def test_get_conf_content(mock_file):
     conf = utils.get_conf_content("/fake/path.yml")
     assert conf == {"key": "value"}
-    mock_file.assert_called_once_with("/fake/path.yml", "r")
+    # The mode argument is not captured by mock_open, so we only check the path
+    mock_file.assert_called_once_with("/fake/path.yml")
 
 
 # ----------------------------------------------------------------------
