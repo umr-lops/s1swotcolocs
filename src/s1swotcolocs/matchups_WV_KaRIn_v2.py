@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-coloc_WV_KaRIn_v2.py
+matchups_WV_KaRIn_v2.py
 ====================
 Collocate Sentinel-1 WaveMode (WV) L2 products with SWOT KaRIn L2_LR_SSH products.
 
@@ -15,7 +15,7 @@ Strategy (memory-efficient):
 
 
 Usage:
-  python coloc_WV_KaRIn_v2.py \\
+  python matchups_WV_KaRIn_v2.py \\
       --swot-root /path/to/SWOT_L2_KARIN_LR_WindWave_AVISO \\
       --s1-root   /path/to/s1/L2_daily/0.12 \\
       --output    ./matchups \\
@@ -39,6 +39,7 @@ from shapely.validation import make_valid
 import matplotlib.pyplot as plt
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
+from s1swotcolocs.utils import get_conf_content
 
 # ##################
 # font properties #
@@ -48,15 +49,15 @@ import matplotlib.font_manager as fm
 
 # Regular and bold font paths
 
-font_regular_path = "/home1/datahome/msimonne/.fonts/times/times.ttf"
-font_bold_path = "/home1/datahome/msimonne/.fonts/times/timesbd.ttf"  # Bold
-fm.fontManager.addfont(font_bold_path)
-fm.fontManager.addfont(font_regular_path)
-# Create font properties
-font_regular = fm.FontProperties(fname=font_regular_path)
-font_bold = fm.FontProperties(fname=font_bold_path)
-# Set default font to regular Times New Roman
-plt.rcParams['font.family'] = font_regular.get_name()
+# font_regular_path = "/home1/datahome/msimonne/.fonts/times/times.ttf"
+# font_bold_path = "/home1/datahome/msimonne/.fonts/times/timesbd.ttf"  # Bold
+# fm.fontManager.addfont(font_bold_path)
+# fm.fontManager.addfont(font_regular_path)
+# # Create font properties
+# font_regular = fm.FontProperties(fname=font_regular_path)
+# font_bold = fm.FontProperties(fname=font_bold_path)
+# # Set default font to regular Times New Roman
+# plt.rcParams['font.family'] = font_regular.get_name()
 
 
 
@@ -83,7 +84,7 @@ SWOT_ROOT = Path("/home/datawork-cersat-public/project/mpc-sentinel1/data/ancill
 S1_WV_ROOT = Path("/home/datawork-cersat-public/project/mpc-sentinel1/analysis/s1_data_analysis/L2_daily/0.12")
 
 # Output directory for STAC-like JSON matchup items
-OUTPUT_DIR = Path("/home1/datahome/msimonne/CDD/Projects/Coloc/matchups")
+OUTPUT_DIR = Path("/tmp/matchups_S1wv_karin")
 
 # Maximum time difference allowed between S1 acquisition and SWOT pass [minutes]
 MAX_TIME_DIFF_MIN = 360 # 120 #30
@@ -795,44 +796,66 @@ def matchups_to_dataframe(matchups):
 # ═════════════════════════════════════════════════════════════════════════════
 
 def find_swot_files(root: Path) -> list[Path]:
+    log.info("Searching for SWOT KaRIn L2_LR_SSH files in %s …", root)
     return sorted(root.rglob("SWOT_L2_LR_SSH_*.nc"))
 
 
 
 
 def run(
-    swot_root: Path = SWOT_ROOT,
-    s1_root: Path = S1_WV_ROOT,
+    conf_file: Path,
     output_dir: Path = OUTPUT_DIR,
     max_time_diff_min: float = MAX_TIME_DIFF_MIN,
-    max_files: int = None,
-    start_file: int = 0,
-    start_at: str = None,
+    start_date: str = None,
+    stop_date: str = None,
     save_every: int = 100,
+    dev: bool = False,
+    
 ):
-
+    
+    conf = get_conf_content(conf_file) if conf_file else None
+    swot_root = Path(conf.get("SWOT_L2_AVISO_DIR", SWOT_ROOT))
+    s1_root   = Path(conf.get("S1_WV_ROOT", S1_WV_ROOT))
     swot_files = find_swot_files(swot_root)
-    swot_files = swot_files[start_file:]
+    output_dir = Path(conf.get("WV_MATCHUP_OUTPUT_DIR", OUTPUT_DIR))
+    log.info("Found %d SWOT files before date filtering", len(swot_files))
 
-    if start_at is not None:
-        found = False
-        for i, f in enumerate(swot_files):
-            if f.name == start_at:
-                log.info("Found start file at index %d", i)
-                swot_files = swot_files[i:]
-                found = True
-                break
+    # ── Filter by date range ──────────────────────────────────────────────
+    if start_date is not None or stop_date is not None:
+        def parse_date_arg(date_str):
+            for fmt in ("%Y-%m-%d", "%Y%m%d"):
+                try:
+                    return datetime.strptime(date_str, fmt).replace(tzinfo=timezone.utc)
+                except ValueError:
+                    continue
+            raise ValueError(f"Date must be YYYY-MM-DD or YYYYMMDD, got {date_str}")
 
-        if not found:
-            log.warning("start_at file not found: %s", start_at)
+        start_dt = parse_date_arg(start_date) if start_date else datetime(1900, 1, 1, tzinfo=timezone.utc)
+        stop_dt  = parse_date_arg(stop_date)  if stop_date  else datetime(2100, 1, 1, tzinfo=timezone.utc)
 
-    log.info("First file to process: %s", swot_files[0].name)
+        if start_dt > stop_dt:
+            raise ValueError("start-date cannot be after stop-date")
 
-    if max_files is not None:
-        swot_files = swot_files[:max_files]
-        log.info("Limiting to first %d SWOT files (test mode)", len(swot_files))
+        filtered = []
+        for f in swot_files:
+            t0, _ = parse_swot_filename_times(f.name)
+            if t0 is None:
+                log.warning("Cannot parse date from %s — skipping", f.name)
+                continue
+            if start_dt <= t0 <= stop_dt:
+                filtered.append(f)
+        swot_files = filtered
+        log.info("Filtered to %d SWOT files between %s and %s",
+                 len(swot_files), start_dt.isoformat(), stop_dt.isoformat())
 
-    log.info("Found %d SWOT KaRIn files to process", len(swot_files))
+    if not swot_files:
+        log.warning("No SWOT files to process")
+        return 0
+    # ── Development mode: restrict to 2 files ──────────────────────────────
+    if dev:
+        swot_files = swot_files[:2]
+        log.info("Development mode: processing only the first 2 SWOT files")
+    log.info("Processing %d SWOT files", len(swot_files))
 
     all_matchups = []
     corrupted_files = []
@@ -927,14 +950,14 @@ def entrypoint():
         description="Collocate S1-WV L2 and SWOT KaRIn L2_LR_SSH products.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    parser.add_argument(
-        "--swot-root", type=Path, default=SWOT_ROOT,
-        help="Root directory containing SWOT KaRIn *.nc files (searched recursively)",
-    )
-    parser.add_argument(
-        "--s1-root", type=Path, default=S1_WV_ROOT,
-        help="Root of the S1-WV daily file tree  (<root>/<yyyy>/<doy>/S1*_WV_L2D_*.nc)",
-    )
+    # parser.add_argument(
+    #     "--swot-root", type=Path, default=SWOT_ROOT,
+    #     help="Root directory containing SWOT KaRIn *.nc files (searched recursively)",
+    # )
+    # parser.add_argument(
+    #     "--s1-root", type=Path, default=S1_WV_ROOT,
+    #     help="Root of the S1-WV daily file tree  (<root>/<yyyy>/<doy>/S1*_WV_L2D_*.nc)",
+    # )
     parser.add_argument(
         "--output", type=Path, default=OUTPUT_DIR,
         help="Output directory for matchup JSON files and summary CSV",
@@ -944,27 +967,36 @@ def entrypoint():
         help="Maximum time difference between S1 and SWOT acquisitions [minutes]",
     )
     parser.add_argument(
-        "--max-files", type=int, default=None,
-        help="Process only the first N SWOT files (for testing)"
+        "--start-date", type=str, default=None,
+        help="Start date (YYYY-MM-DD or YYYYMMDD) — only process SWOT files on/after this date"
     )
     parser.add_argument(
-        "--start-file", type=int, default=0,
-        help="Skip the first N SWOT files"
+        "--stop-date", type=str, default=None,
+        help="Stop date (YYYY-MM-DD or YYYYMMDD) — only process SWOT files on/before this date"
     )
     parser.add_argument(
-        "--start-at", type=str, default=None,
+        "--dev", action="store_true", default=False,
+        help="Development mode: process only 2 SWOT files (useful for testing)"
     )
-    
+    parser.add_argument(
+        "--log-level", type=str, default="INFO",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+        help="Set the logging level (default: INFO)"
+    )
+    parser.add_argument("--conf-file", type=Path, help="Config YAML file (overrides defaults)")
+
     args = parser.parse_args()
 
+    # ── Set logging level ─────────────────────────────────────────────
+    logging.getLogger().setLevel(getattr(logging, args.log_level.upper()))
+
     run(
-        swot_root=args.swot_root,
-        s1_root=args.s1_root,
         output_dir=args.output,
         max_time_diff_min=args.max_time_diff,
-        max_files=args.max_files,
-        start_file=args.start_file,
-        start_at=args.start_at
+        start_date=args.start_date,
+        stop_date=args.stop_date,
+        dev=args.dev,
+        conf_file=args.conf_file
     )
 
 
