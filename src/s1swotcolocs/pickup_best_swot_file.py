@@ -1,7 +1,7 @@
 # File: swot_versioning.py
 
 import re
-from typing import List, Tuple, Optional
+from typing import Optional
 
 
 def _get_acquisition_id(filename: str) -> Optional[str]:
@@ -68,7 +68,7 @@ def _get_crid_sort_key(filename: str) -> tuple:
     return (processing_val, alg_letter, alg_number, file_version_num)
 
 
-def select_latest_version(filenames: List[str]) -> Optional[str]:
+def select_latest_version(filenames: list[str]) -> Optional[str]:
     """
     Selects the filename with the latest KaRIn product version from a list.
     """
@@ -78,8 +78,8 @@ def select_latest_version(filenames: List[str]) -> Optional[str]:
 
 
 def check_if_latest_version(
-    file_to_check: str, all_available_files: List[str]
-) -> Tuple[bool, Optional[str]]:
+    file_to_check: str, all_available_files: list[str]
+) -> tuple[bool, Optional[str]]:
     """Validates if a given file is the definitive latest version for its acquisition.
 
     This function determines if a specific SWOT data file (`file_to_check`)
@@ -98,7 +98,7 @@ def check_if_latest_version(
     Args:
         file_to_check (str): The full filename or path of the SWOT product
             to validate.
-        all_available_files (List[str]): A comprehensive list of all candidate
+        all_available_files (list[str]): A comprehensive list of all candidate
             filenames to search within (e.g., from a directory listing).
 
     Returns:

@@ -1,8 +1,9 @@
-import pytest
-from unittest.mock import MagicMock, patch
-import numpy as np
-from datetime import datetime
 from collections import defaultdict
+from datetime import datetime
+from unittest.mock import MagicMock, patch
+
+import numpy as np
+import pytest
 
 # Import the module under test
 import s1swotcolocs.convert_matchups_nc_to_stac as converter

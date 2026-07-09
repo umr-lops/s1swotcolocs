@@ -44,8 +44,8 @@ jobs:
         strategy:
             fail-fast: false
             matrix:
-                python-version: ["3.10", "3.11", "3.12"]
-                os: ["ubuntu-latest", "macos-latest", "windows-latest"]
+                python-version: ["3.10", "3.13"]
+                os: ["ubuntu-latest"]
 
         steps:
             - name: Checkout the repository
@@ -69,11 +69,21 @@ jobs:
                   create-args: >-
                       python=${{ matrix.python-version }}
 
+            # - name: Install private dependencies (s1ifr)
+            #   run: |
+            #       pip install s1ifr \
+            #       --index-url https://gitlab-ci-token:${{ secrets.CI_JOB_TOKEN }}@gitlab.ifremer.fr/api/v4/projects/4991/packages/pypi/simple
+            #   shell: bash -el {0}
+
             - name: Install private dependencies (s1ifr)
               run: |
-                  # We do this here because we can explicitly pass the token and URL
-                  python -m pip install s1ifr --extra-index-url https://__token__:${{ secrets.CI_JOB_TOKEN }}@gitlab.ifremer.fr/api/v4/projects/4991/packages/pypi/simple
-              shell: bash -el {0}
+                  pip install s1ifr \
+                  --extra-index-url https://${{ secrets.S1IFR_ACCESS_TOKEN }}:${{ secrets.S1IFR_ACCESS_TOKEN }}@gitlab.ifremer.fr/api/v4/projects/4991/packages/pypi/simple
+            # - name: Install private dependencies (s1ifr)
+            #   run: |
+            #       # We do this here because we can explicitly pass the token and URL
+            #       python -m pip install s1ifr --extra-index-url https://__token__:${{ secrets.CI_JOB_TOKEN }}@gitlab.ifremer.fr/api/v4/projects/4991/packages/pypi/simple
+            #   shell: bash -el {0}
 
             - name: Install s1swotcolocs
               run: |

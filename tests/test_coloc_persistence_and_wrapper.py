@@ -1,16 +1,17 @@
 import unittest
+from collections import defaultdict
+from unittest.mock import MagicMock, patch
+
+import geopandas as gpd
 import numpy as np
 import pandas as pd
-import geopandas as gpd
-from unittest.mock import patch, MagicMock
-from collections import defaultdict
 from shapely.geometry import Polygon
 
 from s1swotcolocs.coloc_SWOT_L3_with_S1_CDSE_TOPS import (
+    compute_alphashape_safe,
+    do_cdse_query,
     get_swot_date_info,
     save_netcdf_file_per_swot_piece_orbit_core,
-    do_cdse_query,
-    compute_alphashape_safe,
     treat_one_day_wrapper,
 )
 

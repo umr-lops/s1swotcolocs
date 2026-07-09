@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 
+import argparse
+import logging
+import os  # <--- NEW: Import the os module
 import subprocess
 import sys
-import logging
-import argparse
-import os  # <--- NEW: Import the os module
-from datetime import date, timedelta, datetime
+from datetime import date, datetime, timedelta
+
 from yaml import CLoader as Loader
 from yaml import load
 
@@ -115,7 +116,7 @@ def main():
 
     logging.info("Starting the S1/SWOT collocation wrapper script.")
     logging.info("load the config file from :%s", args.confpath)
-    stream = open(args.confpath, "r")
+    stream = open(args.confpath)
     conf = load(stream, Loader=Loader)
     # --- Configuration ---
     DOCKER_BINARY_PATH = conf["DOCKER_BINARY_PATH"]

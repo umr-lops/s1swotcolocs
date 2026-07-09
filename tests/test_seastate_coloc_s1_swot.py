@@ -1,15 +1,17 @@
-import pytest
-import xarray as xr
-import numpy as np
-import pandas as pd
+import collections
 import os
 from unittest.mock import patch
-import collections
-from s1swotcolocs.utils import get_conf_content
+
+import numpy as np
+import pandas as pd
+import pytest
+import xarray as xr
+
+import s1swotcolocs
 
 # Import the script we want to test
 from s1swotcolocs import seastate_colocs_s1_swot as s1_coloc
-import s1swotcolocs
+from s1swotcolocs.utils import get_conf_content
 
 potential_config_file_1 = os.path.join(
     os.path.dirname(s1swotcolocs.__file__), "localconfig.yml"

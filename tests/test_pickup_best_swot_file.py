@@ -1,11 +1,12 @@
 # File: test_swot_versioning.py
 
 import unittest
+
 from s1swotcolocs.pickup_best_swot_file import (
     _get_acquisition_id,
     _get_crid_sort_key,
-    select_latest_version,
     check_if_latest_version,
+    select_latest_version,
 )
 
 

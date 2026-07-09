@@ -1,14 +1,16 @@
 import argparse
-import logging
-import sys
 import collections
-import glob
-import os
 import datetime
-from tqdm import tqdm
+import glob
+import logging
+import os
+import sys
+
 from dateutil import rrule
-from s1swotcolocs.utils import get_conf_content
+from tqdm import tqdm
+
 from s1swotcolocs.seastate_colocs_s1_swot import associate_sar_and_swot_seastate_params
+from s1swotcolocs.utils import get_conf_content
 
 app_logger = logging.getLogger(__file__)
 

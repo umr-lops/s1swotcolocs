@@ -1,7 +1,7 @@
 import datetime
-from unittest.mock import MagicMock, patch
-from stat import S_IFDIR, S_IFREG
 from os.path import exists as real_exists  # Import the real function for fallback
+from stat import S_IFDIR, S_IFREG
+from unittest.mock import MagicMock, patch
 
 # Import the specific script
 # Note: Ensure the .py file is in your python path or the same directory

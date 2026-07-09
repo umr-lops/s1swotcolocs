@@ -1,12 +1,13 @@
-import os
 import argparse
-import logging
 import datetime
-import paramiko
+import logging
+import os
 import re
 from collections import defaultdict
-from tqdm import tqdm
 from stat import S_ISDIR
+
+import paramiko
+from tqdm import tqdm
 
 # Configuration du logging
 logging.basicConfig(
@@ -18,7 +19,7 @@ logger = logging.getLogger(__name__)
 def is_dir(sftp, path):
     try:
         return S_ISDIR(sftp.stat(path).st_mode)
-    except IOError:
+    except OSError:
         return False
 
 
@@ -136,7 +137,7 @@ def main():
             all_items = sftp.listdir(BASE_PATH)
             cycles = [d for d in all_items if d.startswith("cycle_")]
             cycles.sort()  # Optionnel: pour traiter dans l'ordre chronologique
-        except IOError:
+        except OSError:
             logger.error(f"Impossible de lire le répertoire racine {BASE_PATH}")
             return
 

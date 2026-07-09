@@ -1,14 +1,17 @@
-import panel as pn
-import numpy as np
-import hvplot.pandas  # noqa
-import holoviews as hv
-from scipy.stats import pearsonr
-from scipy.stats import gaussian_kde  # <-- Add this import at the top of your file
 import os
-from s1swotcolocs.illustrate_coloc_swh_file_pyplot import create_combined_gdf
-from shapely import wkt
-import geoviews as gv
 
+import geoviews as gv
+import holoviews as hv
+import hvplot.pandas  # noqa
+import numpy as np
+import panel as pn
+from scipy.stats import (
+    gaussian_kde,  # <-- Add this import at the top of your file
+    pearsonr,
+)
+from shapely import wkt
+
+from s1swotcolocs.illustrate_coloc_swh_file_pyplot import create_combined_gdf
 
 # --- Configuration ---
 hv.extension("bokeh")

@@ -11,15 +11,16 @@ Changes vs original:
   - A dedicated counter tracks how many days were skipped per error type
 """
 
+import argparse
+import datetime
 import logging
 import os
-import argparse
-from collections import defaultdict
-from dateutil import rrule
-from s1swotcolocs.coloc_SWOT_L3_with_S1_CDSE_TOPS import treat_one_day_wrapper
 import sys
-import datetime
+from collections import defaultdict
 
+from dateutil import rrule
+
+from s1swotcolocs.coloc_SWOT_L3_with_S1_CDSE_TOPS import treat_one_day_wrapper
 
 # ---------------------------------------------------------------------------
 # Global counter keys
@@ -71,7 +72,7 @@ def parse_yyyymmdd(s):
         return datetime.datetime.strptime(s, "%Y%m%d")
     except ValueError:
         raise argparse.ArgumentTypeError(
-            "Invalid date format: '{}'. Expected format is YYYYMMDD.".format(s)
+            f"Invalid date format: '{s}'. Expected format is YYYYMMDD."
         )
 
 
