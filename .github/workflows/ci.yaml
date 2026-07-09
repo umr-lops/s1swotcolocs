@@ -74,9 +74,14 @@ jobs:
               shell: bash -el {0}
             - name: Install private dependencies (s1ifr)
               run: |
-                  # We do this here because we can explicitly pass the token and URL
-                  python -m pip install s1ifr --extra-index-url https://__token__:${{ secrets.CI_JOB_TOKEN }}@gitlab.ifremer.fr/api/v4/projects/4991/packages/pypi/simple
+                  pip install s1ifr \
+                  --index-url https://gitlab-ci-token:${{ secrets.CI_JOB_TOKEN }}@gitlab.ifremer.fr/api/v4/projects/4991/packages/pypi/simple
               shell: bash -el {0}
+            # - name: Install private dependencies (s1ifr)
+            #   run: |
+            #       # We do this here because we can explicitly pass the token and URL
+            #       python -m pip install s1ifr --extra-index-url https://__token__:${{ secrets.CI_JOB_TOKEN }}@gitlab.ifremer.fr/api/v4/projects/4991/packages/pypi/simple
+            #   shell: bash -el {0}
 
             - name: Install s1swotcolocs
               run: |
