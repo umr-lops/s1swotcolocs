@@ -920,9 +920,7 @@ def run(
 
     return total_matchups
 
-
-
-if __name__ == "__main__":
+def entrypoint():
     import argparse
 
     parser = argparse.ArgumentParser(
@@ -968,3 +966,7 @@ if __name__ == "__main__":
         start_file=args.start_file,
         start_at=args.start_at
     )
+
+
+if __name__ == "__main__":
+    entrypoint()
