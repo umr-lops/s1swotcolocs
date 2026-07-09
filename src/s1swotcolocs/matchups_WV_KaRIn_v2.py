@@ -42,7 +42,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import xarray as xr
-from shapely.geometry import Polygon, mapping
+from shapely.geometry import Polygon, box, mapping
+from shapely.ops import unary_union
 from tqdm import tqdm
 
 from s1swotcolocs.utils import (
@@ -321,6 +322,59 @@ def s1_scene_polygon(row: pd.Series, swot_lon_max=179):
     return poly
 
 
+def crop_geom_to_bbox(geom, center_lon, center_lat, half_width=2.0):
+    """
+    Crop a Shapely geometry to a bounding box centered on (center_lon, center_lat)
+    with a half‑width in degrees. Handles antimeridian crossing by splitting the
+    box into two if necessary.
+
+    Args:
+        geom: Shapely geometry (Polygon or MultiPolygon).
+        center_lon (float): Longitude of the WV scene centre.
+        center_lat (float): Latitude of the WV scene centre.
+        half_width (float): Half‑width of the box in degrees (default 2.0).
+
+    Returns:
+        Shapely geometry cropped to the box, or the original geometry if the
+        crop is empty or fails.
+    """
+    # Clamp latitude to valid range
+    lat_min = max(-90.0, center_lat - half_width)
+    lat_max = min(90.0, center_lat + half_width)
+
+    lon_min = center_lon - half_width
+    lon_max = center_lon + half_width
+
+    # Build one or two boxes to handle antimeridian crossing
+    boxes = []
+    if lon_min < -180:
+        # Box from -180 to lon_max (if lon_max > -180)
+        if lon_max > -180:
+            boxes.append(box(-180, lat_min, lon_max, lat_max))
+        # Box from lon_min+360 to 180
+        if lon_min + 360 < 180:
+            boxes.append(box(lon_min + 360, lat_min, 180, lat_max))
+    elif lon_max > 180:
+        # Box from lon_min to 180
+        if lon_min < 180:
+            boxes.append(box(lon_min, lat_min, 180, lat_max))
+        # Box from -180 to lon_max-360
+        if lon_max - 360 > -180:
+            boxes.append(box(-180, lat_min, lon_max - 360, lat_max))
+    else:
+        boxes.append(box(lon_min, lat_min, lon_max, lat_max))
+
+    if not boxes:
+        return geom  # fallback (should not happen)
+
+    clip_box = unary_union(boxes)
+    cropped = geom.intersection(clip_box)
+    if cropped.is_empty:
+        # Fallback to original if intersection is empty (unlikely)
+        return geom
+    return cropped
+
+
 # ═════════════════════════════════════════════════════════════════════════════
 # Collocation core
 # ═════════════════════════════════════════════════════════════════════════════
@@ -456,7 +510,10 @@ def collocate_swot_file(
         wv_poly = s1_scene_polygon(wv_row, swot_lon_max_0_360)
         if not swot_poly.intersects(wv_poly):
             continue
-
+        # Crop the SWOT polygon to a box around the WV scene (2° margin)
+        cropped_swot = crop_geom_to_bbox(
+            swot_poly, wv_row["lon"], wv_row["lat"], half_width=2.0
+        )
         intersection = swot_poly.intersection(wv_poly)
         if intersection.is_empty:
             continue
@@ -537,7 +594,7 @@ def collocate_swot_file(
             "geometry": {
                 "intersection": mapping(intersection),
                 "wv_poly": mapping(wv_poly),
-                "swot_poly": mapping(swot_poly),
+                "swot_poly": mapping(cropped_swot),
             },
             "bbox": bbox,
             "properties": {
