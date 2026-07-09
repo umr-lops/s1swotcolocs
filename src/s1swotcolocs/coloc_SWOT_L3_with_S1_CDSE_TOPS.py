@@ -138,7 +138,7 @@ def treat_a_clean_piece_of_swot_orbit(
     """
     :param swotpiece: shapely.geometry.Polygon simplified, not crossing antimeridian
     :param points: 2D matrix with lon and lat from SWOT
-    :param swotsub: sub part of a SWOT xarray.Dataset 
+    :param swotsub: sub part of a SWOT xarray.Dataset
     :return: (GeoDataFrame, cpt)
     """
     app_logger.debug("swotpiece : %s", swotpiece)

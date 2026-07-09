@@ -1,7 +1,6 @@
 # tests/test_matchups_wv_karin_v2.py
 """Unit tests for matchups_WV_KaRIn_v2.py using pytest and mocks."""
 
-import json
 from datetime import date, datetime, timezone
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -14,10 +13,12 @@ from shapely.geometry import Polygon
 
 # Import the module under test
 from s1swotcolocs import matchups_WV_KaRIn_v2 as mwv
+from s1swotcolocs.utils import s1_unwrap_longitudes, _make_sub_polygon
 
 # ----------------------------------------------------------------------
 # Fixtures
 # ----------------------------------------------------------------------
+
 
 @pytest.fixture
 def mock_swot_filename():
@@ -44,6 +45,7 @@ def mock_swot_attrs():
 # ----------------------------------------------------------------------
 # Tests for parsing / helpers
 # ----------------------------------------------------------------------
+
 
 def test_parse_swot_filename_times(mock_swot_filename):
     t0, t1 = mwv.parse_swot_filename_times(mock_swot_filename)
@@ -102,7 +104,7 @@ def test__bbox_overlaps():
 
 def test__unwrap_longitudes():
     lons = np.array([179, 180, -179, -178])
-    unwrapped = mwv._unwrap_longitudes(lons)
+    unwrapped = s1_unwrap_longitudes(lons)
     expected = np.array([179, 180, 181, 182])  # unwrapped across antimeridian
     np.testing.assert_allclose(unwrapped, expected)
 
@@ -110,25 +112,26 @@ def test__unwrap_longitudes():
 def test__make_sub_polygon():
     # Valid polygon
     coords = [(0, 0), (1, 0), (1, 1), (0, 1)]
-    poly = mwv._make_sub_polygon(coords)
+    poly = _make_sub_polygon(coords)
     assert poly is not None
     assert poly.geom_type == "Polygon"
     assert poly.is_valid
 
     # Too few points
     coords = [(0, 0), (1, 1)]
-    poly = mwv._make_sub_polygon(coords)
+    poly = _make_sub_polygon(coords)
     assert poly is None
 
     # With NaN values
     coords = [(0, 0), (np.nan, np.nan), (1, 1), (0, 1)]
-    poly = mwv._make_sub_polygon(coords)
+    poly = _make_sub_polygon(coords)
     assert poly is not None  # should drop the NaN
 
 
 # ----------------------------------------------------------------------
 # Tests for S1-WV helpers
 # ----------------------------------------------------------------------
+
 
 @patch("xarray.open_dataset")
 def test_load_s1_wv(mock_open_dataset):
@@ -167,8 +170,9 @@ def test_load_s1_wv(mock_open_dataset):
             return mock_subpath
         elif key == "polygon":
             mock_poly = MagicMock()
-            poly = np.array([[[10.0, 10.1, 10.2, 10.1, 10.0],
-                              [20.0, 20.1, 20.2, 20.1, 20.0]]])
+            poly = np.array(
+                [[[10.0, 10.1, 10.2, 10.1, 10.0], [20.0, 20.1, 20.2, 20.1, 20.0]]]
+            )
             mock_poly.values = poly
             return mock_poly
         else:
@@ -191,20 +195,24 @@ def test_load_s1_wv(mock_open_dataset):
 
 def test_s1_scene_polygon():
     # Create a sample row with a square polygon
-    row = pd.Series({
-        "polygon_lons": [10, 10.1, 10.2, 10.1, 10],
-        "polygon_lats": [20, 20.1, 20.2, 20.1, 20],
-    })
+    row = pd.Series(
+        {
+            "polygon_lons": [10, 10.1, 10.2, 10.1, 10],
+            "polygon_lats": [20, 20.1, 20.2, 20.1, 20],
+        }
+    )
     poly = mwv.s1_scene_polygon(row, swot_lon_max=180)
     assert poly.geom_type == "Polygon"
     assert poly.is_valid
 
     # Test antimeridian handling: swot_lon_max >= 180
     # Create a polygon crossing Greenwich (lon values around 179 and -179)
-    row = pd.Series({
-        "polygon_lons": [179.9, -179.9, -179.8, 179.8, 179.9],
-        "polygon_lats": [0, 0.1, 0.2, 0.1, 0],
-    })
+    row = pd.Series(
+        {
+            "polygon_lons": [179.9, -179.9, -179.8, 179.8, 179.9],
+            "polygon_lats": [0, 0.1, 0.2, 0.1, 0],
+        }
+    )
     poly = mwv.s1_scene_polygon(row, swot_lon_max=200)
     # Should not raise, and the polygon should be valid (we can't easily assert correct wrap)
     assert poly.is_valid
@@ -212,15 +220,15 @@ def test_s1_scene_polygon():
 
 def test_overlap_pct():
     # Create a large square and a smaller one inside
-    big = Polygon([(0,0), (10,0), (10,10), (0,10)])
-    small = Polygon([(2,2), (8,2), (8,8), (2,8)])
+    big = Polygon([(0, 0), (10, 0), (10, 10), (0, 10)])
+    small = Polygon([(2, 2), (8, 2), (8, 8), (2, 8)])
     intersection = big.intersection(small)
     pct = mwv.overlap_pct(intersection, big)
     # small area = 36, big area = 100 -> 36%
     assert round(pct, 1) == 36.0
 
     # No overlap
-    other = Polygon([(20,20), (30,20), (30,30), (20,30)])
+    other = Polygon([(20, 20), (30, 20), (30, 30), (20, 30)])
     inter = big.intersection(other)
     pct = mwv.overlap_pct(inter, big)
     assert pct == 0.0
@@ -230,10 +238,13 @@ def test_overlap_pct():
 # Tests for file discovery
 # ----------------------------------------------------------------------
 
+
 @patch("pathlib.Path.glob")
 def test_find_s1_wv_files_for_swot(mock_glob):
     # Mock glob to return some files
-    mock_glob.return_value = [Path("/dummy/S1A_WV_L2D_enriched_LOPS_20260101_daily_IPF_004.02.nc")]
+    mock_glob.return_value = [
+        Path("/dummy/S1A_WV_L2D_enriched_LOPS_20260101_daily_IPF_004.02.nc")
+    ]
     s1_root = Path("/fake/s1")
     swot_t0 = datetime(2026, 1, 1, 0, 25, 13, tzinfo=timezone.utc)
     swot_t1 = datetime(2026, 1, 1, 1, 16, 41, tzinfo=timezone.utc)
@@ -264,6 +275,7 @@ def test_find_swot_files(mock_rglob):
 # Integration-like test for collocate_swot_file with mocks
 # ----------------------------------------------------------------------
 
+
 @patch("s1swotcolocs.matchups_WV_KaRIn_v2.s1_scene_polygon")
 @patch("s1swotcolocs.matchups_WV_KaRIn_v2.swot_footprint_polygon")
 @patch("s1swotcolocs.matchups_WV_KaRIn_v2.extract_swot_edges")
@@ -285,20 +297,22 @@ def test_collocate_swot_file(
     mock_find_s1_wv_files.return_value = [Path("/fake/s1.nc")]
 
     # Mock load_s1_wv to return a DataFrame with two scenes
-    df_wv = pd.DataFrame({
-        "time": [pd.Timestamp("2026-01-01T00:45:00", tz="UTC"),
-                 pd.Timestamp("2026-01-01T01:10:00", tz="UTC")],
-        "lon": [10.0, 20.0],
-        "lat": [30.0, 40.0],
-        "wv_mode": ["WV1", "WV2"],
-        "sensor": ["s1a", "s1c"],
-        "subpath": ["sub1", "sub2"],
-        "path": [Path("/fake/s1.nc"), Path("/fake/s1.nc")],
-        "polygon_lons": [[10, 10.1, 10.2, 10.1, 10],
-                         [20, 20.1, 20.2, 20.1, 20]],
-        "polygon_lats": [[30, 30.1, 30.2, 30.1, 30],
-                         [40, 40.1, 40.2, 40.1, 40]],
-    })
+    df_wv = pd.DataFrame(
+        {
+            "time": [
+                pd.Timestamp("2026-01-01T00:45:00", tz="UTC"),
+                pd.Timestamp("2026-01-01T01:10:00", tz="UTC"),
+            ],
+            "lon": [10.0, 20.0],
+            "lat": [30.0, 40.0],
+            "wv_mode": ["WV1", "WV2"],
+            "sensor": ["s1a", "s1c"],
+            "subpath": ["sub1", "sub2"],
+            "path": [Path("/fake/s1.nc"), Path("/fake/s1.nc")],
+            "polygon_lons": [[10, 10.1, 10.2, 10.1, 10], [20, 20.1, 20.2, 20.1, 20]],
+            "polygon_lats": [[30, 30.1, 30.2, 30.1, 30], [40, 40.1, 40.2, 40.1, 40]],
+        }
+    )
     mock_load_s1_wv.return_value = df_wv
 
     # Mock SWOT dataset (only attributes needed)
@@ -311,7 +325,9 @@ def test_collocate_swot_file(
     n_lines = 200
     start_time = pd.Timestamp("2026-01-01T00:25:13", tz="UTC")
     times = pd.date_range(start=start_time, periods=n_lines, freq="30s").values
-    lons = np.linspace(-170, 170, n_lines).reshape(-1, 1) + np.array([0, 0.5, 0.5, 1]) * 5
+    lons = (
+        np.linspace(-170, 170, n_lines).reshape(-1, 1) + np.array([0, 0.5, 0.5, 1]) * 5
+    )
     lats = np.linspace(80, -80, n_lines).reshape(-1, 1) + np.array([0, 0.5, 0.5, 1]) * 2
     edges = {
         "lons": lons,
@@ -334,10 +350,15 @@ def test_collocate_swot_file(
         # Create a small square around the S1 point
         lon = row["lon"]
         lat = row["lat"]
-        return Polygon([(lon-0.5, lat-0.5),
-                        (lon+0.5, lat-0.5),
-                        (lon+0.5, lat+0.5),
-                        (lon-0.5, lat+0.5)])
+        return Polygon(
+            [
+                (lon - 0.5, lat - 0.5),
+                (lon + 0.5, lat - 0.5),
+                (lon + 0.5, lat + 0.5),
+                (lon - 0.5, lat + 0.5),
+            ]
+        )
+
     mock_s1_scene_polygon.side_effect = mock_s1_polygon
 
     # Run collocation with a large time margin to guarantee time filter passes
@@ -375,6 +396,7 @@ def test_collocate_swot_file(
 # Test for matchups_to_dataframe
 # ----------------------------------------------------------------------
 
+
 def test_matchups_to_dataframe():
     # Create a minimal matchup item
     item = {
@@ -394,9 +416,7 @@ def test_matchups_to_dataframe():
             "s1_subpath": "sub1",
             "s1_path": "/fake/s1.nc",
         },
-        "assets": {
-            "swot_karin": {"href": "/fake/swot.nc"}
-        }
+        "assets": {"swot_karin": {"href": "/fake/swot.nc"}},
     }
     df = mwv.matchups_to_dataframe([item])
     assert len(df) == 1
