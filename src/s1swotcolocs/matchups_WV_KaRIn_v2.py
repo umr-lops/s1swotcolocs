@@ -20,6 +20,17 @@ Usage:
       --log-level DEBUG
 """
 
+import time
+
+try:
+    import resource
+except ImportError:
+    resource = None
+
+try:
+    import psutil
+except ImportError:
+    psutil = None
 import json
 import logging
 from datetime import date, datetime, timedelta, timezone
@@ -32,6 +43,7 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 from shapely.geometry import Polygon, mapping
+from tqdm import tqdm
 
 from s1swotcolocs.utils import (
     NumpyEncoder,
@@ -358,7 +370,7 @@ def collocate_swot_file(
         )
         return matchups, debug_image_csv_suffix
 
-    log.info("Processing SWOT: %s", swot_path.name)
+    log.debug("Processing SWOT: %s", swot_path.name)
 
     # ── 2. Find the 1 or 2 relevant S1-WV daily files ─────────────────────
     s1_files = find_s1_wv_files_for_swot(swot_t0_fn, swot_t1_fn, s1_root)
@@ -369,10 +381,10 @@ def collocate_swot_file(
     # ── 3. Load S1-WV data (small, ~3 MB each) ────────────────────────────
     df_wv_parts = []
     for s1_path in s1_files:
-        log.info("  Loading S1-WV: %s", s1_path.name)
+        log.debug("  Loading S1-WV: %s", s1_path.name)
         df_wv_parts.append(load_s1_wv(s1_path))
     df_wv = pd.concat(df_wv_parts, ignore_index=True)
-    log.info("  %d S1-WV scenes to test", len(df_wv))
+    log.debug("  %d S1-WV scenes to test", len(df_wv))
 
     if df_wv.empty:
         return matchups, debug_image_csv_suffix
@@ -405,7 +417,7 @@ def collocate_swot_file(
         return matchups, debug_image_csv_suffix
 
     # ── 6. Load only swath-edge pixels ────────────────────────────────────
-    log.info("  Loading SWOT edge pixels …")
+    log.debug("  Loading SWOT edge pixels …")
     edges = extract_swot_edges(ds_swot)
     ds_swot.close()
 
@@ -569,7 +581,7 @@ def collocate_swot_file(
             json.dump(item, fh, indent=2, cls=NumpyEncoder)
 
         matchups.append(item)
-        log.info(
+        log.debug(
             "  MATCHUP %-55s  Δt=%5.1f min  overlap=%5.1f%%",
             matchup_id,
             float(dt_at_coloc.total_seconds()) / 60,
@@ -654,6 +666,8 @@ def run(
     Returns:
         int: Total number of matchups found.
     """
+    start_time = time.time()  # 👈 start timer
+
     conf = get_conf_content(conf_file) if conf_file else None
     swot_root = Path(conf.get("SWOT_L2_AVISO_DIR", SWOT_ROOT))
     s1_root = Path(conf.get("S1_WV_ROOT", S1_WV_ROOT))
@@ -719,68 +733,145 @@ def run(
     all_matchups = []
     corrupted_files = []
     total_matchups = 0
+    colocated_files = 0
+    non_colocated_files = 0
 
     csv_path = output_dir / "test_json_matchups.csv"
     csv_exists = csv_path.exists()
     debug_image_csv_suffix = ""
+    log.info("max time difference allowed: %d minutes", max_time_diff_min)
+    # ── Progress bar ────────────────────────────────────────────────────
+    with tqdm(total=len(swot_files), desc="Processing SWOT files", unit="file") as pbar:
+        for i, swot_path in enumerate(swot_files, start=1):
+            try:
+                matchups, debug_image_csv_suffix = collocate_swot_file(
+                    swot_path,
+                    s1_root=s1_root,
+                    output_dir=output_dir,
+                    max_time_diff_min=max_time_diff_min,
+                )
+                all_matchups.extend(matchups)
+                if matchups:
+                    colocated_files += 1
+                else:
+                    non_colocated_files += 1
+            except Exception as exc:
+                log.exception("Fatal Bazooka error while processing %s", swot_path.name)
+                corrupted_files.append(
+                    {
+                        "filename": swot_path.name,
+                        "full_path": str(swot_path),
+                        "error_type": type(exc).__name__,
+                        "error_message": str(exc),
+                        "timestamp_utc": datetime.utcnow().isoformat(),
+                    }
+                )
 
-    for i, swot_path in enumerate(swot_files, start=1):
-        try:
-            matchups, debug_image_csv_suffix = collocate_swot_file(
-                swot_path,
-                s1_root=s1_root,
-                output_dir=output_dir,
-                max_time_diff_min=max_time_diff_min,
-            )
-            all_matchups.extend(matchups)
-        except Exception as exc:
-            log.exception("Fatal Bazooka error while processing %s", swot_path.name)
-            corrupted_files.append(
+            pbar.update(1)
+            pbar.set_postfix(
                 {
-                    "filename": swot_path.name,
-                    "full_path": str(swot_path),
-                    "error_type": type(exc).__name__,
-                    "error_message": str(exc),
-                    "timestamp_utc": datetime.utcnow().isoformat(),
+                    "matchups": total_matchups + len(all_matchups),
+                    "colocated": colocated_files,
+                    "non-coloc": non_colocated_files,
+                    "corrupted": len(corrupted_files),
                 }
             )
 
-        # Save every N SWOT files (or after the last one)
-        if i % save_every == 0 or i == len(swot_files):
-            if all_matchups:
-                df_summary = matchups_to_dataframe(all_matchups)
-                df_summary.to_csv(
-                    csv_path,
-                    mode="a",
-                    header=not csv_exists,
-                    index=False,
-                )
-                csv_exists = True
-                total_matchups += len(df_summary)
-                log.info(
-                    "Saved %d matchups after processing %d/%d SWOT files.",
-                    len(df_summary),
-                    i,
-                    len(swot_files),
-                )
-                all_matchups.clear()
+            # Save every N SWOT files (or after the last one)
+            if i % save_every == 0 or i == len(swot_files):
+                if all_matchups:
+                    df_summary = matchups_to_dataframe(all_matchups)
+                    df_summary.to_csv(
+                        csv_path,
+                        mode="a",
+                        header=not csv_exists,
+                        index=False,
+                    )
+                    csv_exists = True
+                    total_matchups += len(df_summary)
+                    log.info(
+                        "Saved %d matchups after processing %d/%d SWOT files.",
+                        len(df_summary),
+                        i,
+                        len(swot_files),
+                    )
+                    all_matchups.clear()
+                    # Update postfix after saving
+                    pbar.set_postfix(
+                        {
+                            "matchups": total_matchups,
+                            "colocated": colocated_files,
+                            "non-coloc": non_colocated_files,
+                            "corrupted": len(corrupted_files),
+                        }
+                    )
 
     log.info("Total matchups found: %d", total_matchups)
+    log.info(
+        "Colocated files: %d, Non-colocated: %d, Corrupted: %d",
+        colocated_files,
+        non_colocated_files,
+        len(corrupted_files),
+    )
 
-    # Save corrupted file list
+    # ── Save corrupted file list with timestamp ──────────────────────
     if corrupted_files:
         df_bad = pd.DataFrame(corrupted_files)
-        bad_csv = output_dir / f"corrupted_swot_files{debug_image_csv_suffix}.csv"
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        bad_csv = (
+            output_dir / f"corrupted_swot_files_{timestamp}{debug_image_csv_suffix}.csv"
+        )
         df_bad.to_csv(bad_csv, index=False)
         log.warning("Saved %d corrupted SWOT files to %s", len(df_bad), bad_csv)
 
-    # Remove potential duplicates (due to relaunching after checkpoints)
+    # ── Remove potential duplicates ──────────────────────────────────
     try:
         df = pd.read_csv(csv_path)
         df = df.drop_duplicates(subset="id")
         df.to_csv(csv_path, index=False)
     except FileNotFoundError:
         pass
+
+    # ── Final stats: elapsed time & peak memory ─────────────────────
+    elapsed = time.time() - start_time
+    days = int(elapsed // 86400)
+    hours = int((elapsed % 86400) // 3600)
+    minutes = int((elapsed % 3600) // 60)
+    seconds = elapsed % 60
+    time_str = (
+        f"{days}d {hours:02d}h {minutes:02d}m {seconds:05.2f}s"
+        if days
+        else f"{hours:02d}h {minutes:02d}m {seconds:05.2f}s"
+    )
+
+    mem_gb = None
+    if resource is not None:
+        try:
+            mem_usage = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+            # ru_maxrss is in kilobytes on Linux, but bytes on macOS.
+            # Check if the value is huge (like > 1e9) to guess.
+            if mem_usage > 1e9:
+                mem_gb = mem_usage / (1024**3)  # bytes -> GB
+            else:
+                mem_gb = mem_usage / (1024**2)  # KB -> GB
+        except Exception:
+            pass
+    elif psutil is not None:
+        try:
+            proc = psutil.Process()
+            mem_usage = proc.memory_info().peak_wset  # Windows, or .rss on Linux
+            # Fallback to .rss if .peak_wset not available
+            if not mem_usage:
+                mem_usage = proc.memory_info().rss
+            mem_gb = mem_usage / (1024**3)
+        except Exception:
+            pass
+
+    log.info("Elapsed time: %s", time_str)
+    if mem_gb is not None:
+        log.info("Peak memory consumption: %.2f GB", mem_gb)
+    else:
+        log.info("Peak memory: not available (install psutil or resource module)")
 
     return total_matchups
 
