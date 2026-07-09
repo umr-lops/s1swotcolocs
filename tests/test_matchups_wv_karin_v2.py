@@ -13,7 +13,7 @@ from shapely.geometry import Polygon
 
 # Import the module under test
 from s1swotcolocs import matchups_WV_KaRIn_v2 as mwv
-from s1swotcolocs.utils import s1_unwrap_longitudes, _make_sub_polygon
+from s1swotcolocs.utils import _make_sub_polygon, s1_unwrap_longitudes
 
 # ----------------------------------------------------------------------
 # Fixtures

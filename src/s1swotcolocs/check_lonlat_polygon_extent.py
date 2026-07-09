@@ -2,8 +2,8 @@
 set of methods to spot strange polygons in SWOT data
 """
 
-from shapely.geometry import Polygon
 import numpy as np
+from shapely.geometry import Polygon
 
 
 def angular_distance(lon1, lon2):

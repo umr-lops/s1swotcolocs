@@ -1,8 +1,9 @@
-import unittest
 import collections
+import unittest
+from unittest.mock import MagicMock, patch
+
 import numpy as np
 import xarray as xr
-from unittest.mock import patch, MagicMock
 
 from s1swotcolocs.coloc_SWOT_L3_with_S1_CDSE_TOPS import get_swot_geoloc
 

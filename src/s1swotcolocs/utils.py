@@ -1,14 +1,15 @@
-import logging
 import json
+import logging
+import re
+from datetime import datetime, timezone
+
+import numpy as np
+import xarray as xr
+from shapely.geometry import Polygon
+from shapely.ops import unary_union
+from shapely.validation import make_valid
 from yaml import CLoader as Loader
 from yaml import load
-from datetime import datetime, timezone
-import re
-import numpy as np
-from shapely.ops import unary_union
-from shapely.geometry import Polygon
-from shapely.validation import make_valid
-import xarray as xr
 
 logger = logging.getLogger("s1swotcolocs.get_config_info")
 logger.addHandler(logging.NullHandler())
@@ -76,7 +77,7 @@ def overlap_pct(intersection, wv_poly: Polygon) -> float:
 
 def get_conf_content(conf_path):
     # stream = open(get_config_file_path(), "r")
-    stream = open(conf_path, "r")
+    stream = open(conf_path)
     conf = load(stream, Loader=Loader)
     return conf
 

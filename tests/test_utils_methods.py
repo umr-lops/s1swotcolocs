@@ -13,7 +13,6 @@ from shapely.geometry import Polygon
 
 from s1swotcolocs import utils
 
-
 # ----------------------------------------------------------------------
 # Tests for get_conf_content
 # ----------------------------------------------------------------------

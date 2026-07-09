@@ -1,25 +1,26 @@
-import collections
-
-import s1ifr
-import os
 import argparse
-import pandas as pd
-import sys
+import collections
+import datetime
 import glob
 import logging
-import xarray as xr
-from tqdm import tqdm
-from scipy import spatial
-import numpy as np
+import os
+import sys
+from itertools import repeat
+
 import alphashape
 import geopandas as gpd
-from shapely.geometry import MultiPoint
-import datetime
-from itertools import repeat
-from shapely import wkt
+import numpy as np
+import pandas as pd
+import s1ifr
+import xarray as xr
 from s1ifr import paths_safe_product_family
-from s1swotcolocs.utils import get_conf_content
+from scipy import spatial
+from shapely import wkt
+from shapely.geometry import MultiPoint
+from tqdm import tqdm
+
 from s1swotcolocs.pickup_best_swot_file import check_if_latest_version
+from s1swotcolocs.utils import get_conf_content
 
 DEFAULT_IFREMER_S1_VERSION_L1B = ["A17", "A18", "A21", "A23", "A16", "A15"]
 SWOT_SWATH_LIMITS = {"left": (0, 34), "right": (35, 69)}
@@ -196,11 +197,9 @@ def create_empty_coloc_res(indexes_sar_grid) -> xr.Dataset:
     fcts = {"mean": np.mean, "med": np.median, "std": np.std}
     for vv in DEFAULT_SWOT_VARIABLES:
         for fct in fcts:
-            empty_dummy_condensated_swot_coloc["%s_%s" % (vv, fct)] = xr.DataArray(
+            empty_dummy_condensated_swot_coloc[f"{vv}_{fct}"] = xr.DataArray(
                 np.nan,
-                attrs={
-                    "description": "%s of %s variable from SWOT product" % (fct, vv)
-                },
+                attrs={"description": f"{fct} of {vv} variable from SWOT product"},
             )
     empty_dummy_condensated_swot_coloc = (
         empty_dummy_condensated_swot_coloc.assign_coords(indexes_sar_grid)
@@ -349,16 +348,13 @@ def s1swot_core_tile_coloc(
                     valval = (
                         np.nan
                     )  # to avoid RuntimeWarning Degrees of freedom <= 0 for slice
-                condensated_swot["%s_%s" % (vv, fct)] = xr.DataArray(
+                condensated_swot[f"{vv}_{fct}"] = xr.DataArray(
                     valval,
                     attrs={
-                        "description": "%s of %s variable from SWOT points within a %f deg radius after swh_karin_qual=0 and rain_flag=0 filtering"
-                        % (fct, vv, radius_coloc)
+                        "description": f"{fct} of {vv} variable from SWOT points within a {radius_coloc:f} deg radius after swh_karin_qual=0 and rain_flag=0 filtering"
                     },
                 )
-                condensated_swot["%s_%s" % (vv, fct)].attrs.update(
-                    swotclosest[vv].attrs
-                )
+                condensated_swot[f"{vv}_{fct}"].attrs.update(swotclosest[vv].attrs)
         condensated_swot = condensated_swot.assign_coords(indexes_sar)
         condensated_swot = condensated_swot.expand_dims(["tile_line", "tile_sample"])
         cpt["tile_with_SWOT_neighbors"] += 1
@@ -588,9 +584,9 @@ def associate_sar_and_swot_seastate_params(
                 fpath_out = os.path.join(
                     outputdir,
                     mode,
-                    "%s" % year,
-                    "%s" % month,
-                    "%s" % day,
+                    f"{year}",
+                    f"{month}",
+                    f"{day}",
                     # os.path.basename(metacolocpath).replace(
                     #     "coloc_",
                     #     "seastate_coloc_%s_"
@@ -600,14 +596,14 @@ def associate_sar_and_swot_seastate_params(
                     #         )
                     #     ),
                     # ),
-                    "seastate_coloc_%s_%s.nc" % (sar_basename_part, part_swot_basename),
+                    f"seastate_coloc_{sar_basename_part}_{part_swot_basename}.nc",
                 )
                 fpath_out_nadir = os.path.join(
                     outputdir,
                     mode,
-                    "%s" % year,
-                    "%s" % month,
-                    "%s" % day,
+                    f"{year}",
+                    f"{month}",
+                    f"{day}",
                     # os.path.basename(metacolocpath).replace(
                     #     "coloc_",
                     #     "seastate_coloc_%s_"
@@ -617,8 +613,7 @@ def associate_sar_and_swot_seastate_params(
                     #         )
                     #     ),
                     # ),
-                    "seastate_nadirlike_coloc_%s_%s.nc"
-                    % (sar_basename_part, part_swot_basename),
+                    f"seastate_nadirlike_coloc_{sar_basename_part}_{part_swot_basename}.nc",
                 )
                 if os.path.exists(fpath_out) and overwrite is False:
                     cpt["output_file_already_existing"] += 1

@@ -1,22 +1,24 @@
-import os
 import argparse
 import glob
 import logging
-import xarray as xr
-import pystac
-from pystac_client import Client
-from datetime import datetime, timezone, timedelta
-from tqdm import tqdm
-import shapely.wkt
+import os
 from collections import defaultdict
-from shapely.geometry import mapping
-from shapely.ops import transform
+from datetime import datetime, timedelta, timezone
+
 import pyproj
+import pystac
+import shapely.wkt
+import xarray as xr
+from pystac_client import Client
 
 # Internal Library Imports
 from s1ifr.get_path_from_base_safe import get_path_from_base_safe
-from s1swotcolocs.utils import get_conf_content
+from shapely.geometry import mapping
+from shapely.ops import transform
+from tqdm import tqdm
+
 from s1swotcolocs.coloc_SWOT_L3_with_S1_CDSE_TOPS import get_swot_date_info
+from s1swotcolocs.utils import get_conf_content
 
 # Official NASA SWOT STAC Configuration
 NASA_STAC_URL = "https://cmr.earthdata.nasa.gov/stac/POCLOUD"
@@ -37,7 +39,7 @@ def get_memory_usage():
         import psutil
 
         memory_used_go = psutil.virtual_memory().used / 1000 / 1000 / 1000.0
-    str_mem = "RAM usage: %1.1f Go" % memory_used_go
+    str_mem = f"RAM usage: {memory_used_go:1.1f} Go"
     return str_mem
 
 
@@ -141,7 +143,7 @@ def process_nc_to_stac(nc_path, output_dir, config, extension_url, counters, ove
             item_id = f"matchup_{sar_safe.replace('.SAFE', '')}_SWOT_KaRin_{swot_formated_date}"
             # out_path = os.path.join(output_dir, f"{item_id}.json")
             out_path = os.path.join(
-                output_dir, "%s" % year, "%s" % month, "%s" % day, f"{item_id}.json"
+                output_dir, f"{year}", f"{month}", f"{day}", f"{item_id}.json"
             )
             if os.path.exists(out_path) and overwrite is False:
                 counters["matchups_already_available_in_STAC"] += 1
@@ -305,7 +307,7 @@ def main():
 
     files = [args.input_nc] if args.input_nc else []
     if args.input_list:
-        with open(args.input_list, "r") as f:
+        with open(args.input_list) as f:
             files = [lline.strip() for lline in f if lline.strip()]
     final_listing_stac_generated = []
     counters = defaultdict(int)

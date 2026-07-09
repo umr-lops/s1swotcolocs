@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 matchups_WV_KaRIn_v2.py
 ====================
@@ -26,27 +25,25 @@ import logging
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
+import cartopy.crs as ccrs
+import cartopy.feature as cfeature
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import xarray as xr
 from shapely.geometry import Polygon, mapping
 
-
-import matplotlib.pyplot as plt
-import cartopy.crs as ccrs
-import cartopy.feature as cfeature
 from s1swotcolocs.utils import (
-    get_conf_content,
-    robust_swot_time_from_attrs,
+    NumpyEncoder,
     _bbox_overlaps,
     extract_swot_edges,
-    swot_footprint_polygon,
-    NumpyEncoder,
-    parse_swot_filename_times,
+    get_conf_content,
     overlap_pct,
+    parse_swot_filename_times,
+    robust_swot_time_from_attrs,
     s1_unwrap_longitudes,
+    swot_footprint_polygon,
 )
-
 
 # ##################
 # font properties #

@@ -24,6 +24,7 @@ treat_one_day_wrapper:
 No other logic has been changed.
 """
 
+import argparse
 import collections
 import datetime
 import glob
@@ -34,26 +35,25 @@ import time
 import traceback
 import warnings
 
+import alphashape
+import cdsodatacli
+import cdsodatacli.query
+import geodatasets
+import geopandas as gpd
 import numpy as np
 import pandas as pd
 import xarray as xr
 from antimeridian import fix_polygon
 from antimeridian._implementation import FixWindingWarning
+from scipy import spatial
 from shapely.geometry import MultiPoint, MultiPolygon
 from tqdm import tqdm
-import geopandas as gpd
-from scipy import spatial
-import alphashape
-import geodatasets
-import argparse
 
-import cdsodatacli
-import cdsodatacli.query
 import s1swotcolocs
-from s1swotcolocs.utils import get_conf_content
 from s1swotcolocs.check_lonlat_polygon_extent import (
     check_longitude_smaller_than_latitude_extent,
 )
+from s1swotcolocs.utils import get_conf_content
 
 warnings.filterwarnings("ignore", category=FixWindingWarning)
 warnings.filterwarnings(
@@ -183,8 +183,8 @@ def treat_a_clean_piece_of_swot_orbit(
         startswot = time_north
         stopswot = time_south
 
-    sta = pd.to_datetime((startswot - delta_t_max)).round("us").to_pydatetime()
-    sto = pd.to_datetime((stopswot + delta_t_max)).round("us").to_pydatetime()
+    sta = pd.to_datetime(startswot - delta_t_max).round("us").to_pydatetime()
+    sto = pd.to_datetime(stopswot + delta_t_max).round("us").to_pydatetime()
     app_logger.debug("sta : %s sto : %s", sta, sto)
 
     gdf = gpd.GeoDataFrame(
@@ -197,7 +197,7 @@ def treat_a_clean_piece_of_swot_orbit(
             "sensormode": [mode],
             "producttype": [producttype],
             "Attributes": [None],
-            "id_query": ["SWOT %s %s %s" % (original_filename, startswot, stopswot)],
+            "id_query": [f"SWOT {original_filename} {startswot} {stopswot}"],
         }
     )
     return gdf, cpt
@@ -517,7 +517,7 @@ def save_netcdf_file_per_swot_piece_orbit_core(
     """
     SWOT_start_piece = pd.to_datetime(swot_gdf["id_query"][0].split(" ")[2])
     SWOT_start_piece = SWOT_start_piece.tz_localize("UTC")
-    swot_polygon = "%s" % swot_gdf["geometry"][0]
+    swot_polygon = "{}".format(swot_gdf["geometry"][0])
 
     all_SAR_polygones = []
     all_SWOT_fpath = []
@@ -528,7 +528,7 @@ def save_netcdf_file_per_swot_piece_orbit_core(
     cdse_output["Start_dt"] = pd.to_datetime(start_time_strings, utc=True)
 
     for sasa in range(len(cdse_output["geometry"])):
-        all_SAR_polygones.append("%s" % cdse_output["geometry"].iloc[sasa])
+        all_SAR_polygones.append("{}".format(cdse_output["geometry"].iloc[sasa]))
         SAR_start_slice = cdse_output["Start_dt"].iloc[sasa]
         delta_diff_time = SWOT_start_piece - SAR_start_slice
         delta_diff_time_minutes = delta_diff_time / np.timedelta64(1, "m")
@@ -611,7 +611,7 @@ def get_swot_date_info(SWOT_start_piece):
     month = f"{dt_py.month:02d}"
     day = f"{dt_py.day:02d}"
     swot_formated_date = (
-        ("%s" % SWOT_start_piece).replace("-", "").replace(":", "").split(".")[0]
+        (f"{SWOT_start_piece}").replace("-", "").replace(":", "").split(".")[0]
     )
     return swot_formated_date, year, month, day
 
@@ -628,10 +628,10 @@ def save_meta_coloc_output(
             swot_formated_date, year, month, day = get_swot_date_info(SWOT_start_piece)
             fpath_out = os.path.join(
                 dir_output,
-                "%s" % year,
-                "%s" % month,
-                "%s" % day,
-                "coloc_SWOT_L3_Sentinel-1_IW_%s.nc" % swot_formated_date,
+                f"{year}",
+                f"{month}",
+                f"{day}",
+                f"coloc_SWOT_L3_Sentinel-1_IW_{swot_formated_date}.nc",
             )
             app_logger.info("fpath_out: %s", fpath_out)
             cpt = save_netcdf_file_per_swot_piece_orbit_core(

@@ -1,16 +1,17 @@
-import unittest
-import numpy as np
-import xarray as xr
-from shapely.geometry import Polygon
 import logging
+import unittest
 from collections import defaultdict
 from unittest.mock import patch
 
+import numpy as np
+import xarray as xr
+from shapely.geometry import Polygon
+
 from s1swotcolocs.coloc_SWOT_L3_with_S1_CDSE_TOPS import (
-    treat_a_clean_piece_of_swot_orbit,
-    is_nearly_collinear,
-    is_degenerate_swath,
     _safe_fix_polygon,
+    is_degenerate_swath,
+    is_nearly_collinear,
+    treat_a_clean_piece_of_swot_orbit,
 )
 
 app_logger = logging.getLogger("s1swotcolocs.coloc_SWOT_L3_with_S1_CDSE_TOPS")
