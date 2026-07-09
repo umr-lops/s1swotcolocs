@@ -18,6 +18,7 @@ from s1swotcolocs import utils
 # Tests for get_conf_content
 # ----------------------------------------------------------------------
 
+
 @patch("builtins.open", new_callable=mock_open, read_data="key: value")
 def test_get_conf_content(mock_file):
     conf = utils.get_conf_content("/fake/path.yml")
@@ -28,6 +29,7 @@ def test_get_conf_content(mock_file):
 # ----------------------------------------------------------------------
 # Tests for parse_swot_filename_times
 # ----------------------------------------------------------------------
+
 
 def test_parse_swot_filename_times():
     fname = "SWOT_L2_LR_SSH_WindWave_043_518_20260101T002513_20260101T011641_PID0_01.nc"
@@ -44,6 +46,7 @@ def test_parse_swot_filename_times():
 # Tests for s1_unwrap_longitudes
 # ----------------------------------------------------------------------
 
+
 def test_s1_unwrap_longitudes():
     lons = np.array([179, 180, -179, -178])
     unwrapped = utils.s1_unwrap_longitudes(lons)
@@ -54,6 +57,7 @@ def test_s1_unwrap_longitudes():
 # ----------------------------------------------------------------------
 # Tests for _make_sub_polygon
 # ----------------------------------------------------------------------
+
 
 def test_make_sub_polygon():
     # Valid polygon
@@ -78,6 +82,7 @@ def test_make_sub_polygon():
 # Tests for _bbox_overlaps
 # ----------------------------------------------------------------------
 
+
 def test_bbox_overlaps():
     # Overlapping
     assert utils._bbox_overlaps(-10, 10, -10, 10, -5, 5, -5, 5) is True
@@ -90,6 +95,7 @@ def test_bbox_overlaps():
 # ----------------------------------------------------------------------
 # Tests for robust_swot_time_from_attrs
 # ----------------------------------------------------------------------
+
 
 def test_robust_swot_time_from_attrs():
     attrs = {
@@ -116,16 +122,17 @@ def test_robust_swot_time_from_attrs():
 # Tests for overlap_pct
 # ----------------------------------------------------------------------
 
+
 def test_overlap_pct():
-    big = Polygon([(0,0), (10,0), (10,10), (0,10)])
-    small = Polygon([(2,2), (8,2), (8,8), (2,8)])
+    big = Polygon([(0, 0), (10, 0), (10, 10), (0, 10)])
+    small = Polygon([(2, 2), (8, 2), (8, 8), (2, 8)])
     intersection = big.intersection(small)
     pct = utils.overlap_pct(intersection, big)
     # small area = 36, big area = 100 -> 36%
     assert round(pct, 1) == 36.0
 
     # No overlap
-    other = Polygon([(20,20), (30,20), (30,30), (20,30)])
+    other = Polygon([(20, 20), (30, 20), (30, 30), (20, 30)])
     inter = big.intersection(other)
     pct = utils.overlap_pct(inter, big)
     assert pct == 0.0
@@ -139,14 +146,20 @@ def test_overlap_pct():
 # Tests for extract_swot_edges
 # ----------------------------------------------------------------------
 
+
 def test_extract_swot_edges():
     # Create a mock xarray dataset
     mock_ds = MagicMock(spec=xr.Dataset)
     n_lines = 10
     n_pix = 69
     # Longitudes in [0, 360]
-    lons = np.linspace(0, 360, n_lines).reshape(-1, 1) + np.linspace(0, 10, n_pix).reshape(1, -1)
-    lats = np.linspace(80, -80, n_lines).reshape(-1, 1) + np.linspace(0, 2, n_pix).reshape(1, -1) * 0.3
+    lons = np.linspace(0, 360, n_lines).reshape(-1, 1) + np.linspace(
+        0, 10, n_pix
+    ).reshape(1, -1)
+    lats = (
+        np.linspace(80, -80, n_lines).reshape(-1, 1)
+        + np.linspace(0, 2, n_pix).reshape(1, -1) * 0.3
+    )
     times = pd.date_range("2026-01-01T00:25:13", periods=n_lines, freq="30s").values
 
     # Set up mocks for isel
@@ -158,7 +171,9 @@ def test_extract_swot_edges():
                 line = kwargs["num_lines"]
                 if line < 0:
                     line = n_lines + line
-                vals = lons[line, idx] if "longitude" in str(kwargs) else lats[line, idx]
+                vals = (
+                    lons[line, idx] if "longitude" in str(kwargs) else lats[line, idx]
+                )
             else:
                 vals = lons[:, idx] if "longitude" in str(kwargs) else lats[:, idx]
             mock_arr.values = vals
@@ -167,9 +182,13 @@ def test_extract_swot_edges():
 
     # We need separate mocks for longitude and latitude
     mock_ds.longitude = MagicMock()
-    mock_ds.longitude.isel.side_effect = lambda **kw: isel_side_effect(**{**kw, "longitude": True})
+    mock_ds.longitude.isel.side_effect = lambda **kw: isel_side_effect(
+        **{**kw, "longitude": True}
+    )
     mock_ds.latitude = MagicMock()
-    mock_ds.latitude.isel.side_effect = lambda **kw: isel_side_effect(**{**kw, "latitude": True})
+    mock_ds.latitude.isel.side_effect = lambda **kw: isel_side_effect(
+        **{**kw, "latitude": True}
+    )
     mock_ds.time = MagicMock()
     mock_ds.time.values = times
     mock_ds.sizes = {"num_lines": n_lines, "num_pixels": n_pix}
@@ -189,10 +208,13 @@ def test_extract_swot_edges():
 # Tests for swot_footprint_polygon
 # ----------------------------------------------------------------------
 
+
 def test_swot_footprint_polygon():
     # Build a simple edge dict with 4 columns
     n_lines = 150
-    lons = np.linspace(-170, 170, n_lines).reshape(-1, 1) + np.array([0, 0.5, 0.5, 1]) * 5
+    lons = (
+        np.linspace(-170, 170, n_lines).reshape(-1, 1) + np.array([0, 0.5, 0.5, 1]) * 5
+    )
     lats = np.linspace(80, -80, n_lines).reshape(-1, 1) + np.array([0, 0.5, 0.5, 1]) * 2
     edges = {
         "lons": lons,
@@ -220,6 +242,7 @@ def test_swot_footprint_polygon():
 # Tests for NumpyEncoder
 # ----------------------------------------------------------------------
 
+
 def test_numpy_encoder():
     encoder = utils.NumpyEncoder()
     # numpy integer
@@ -231,6 +254,11 @@ def test_numpy_encoder():
     assert encoder.default(arr) == [1, 2, 3]
 
     # Full serialization with mixed types including string
-    data = {"a": np.int64(10), "b": np.float32(1.5), "c": np.array([4, 5, 6]), "d": "hello"}
+    data = {
+        "a": np.int64(10),
+        "b": np.float32(1.5),
+        "c": np.array([4, 5, 6]),
+        "d": "hello",
+    }
     json_str = json.dumps(data, cls=utils.NumpyEncoder)
     assert json.loads(json_str) == {"a": 10, "b": 1.5, "c": [4, 5, 6], "d": "hello"}
