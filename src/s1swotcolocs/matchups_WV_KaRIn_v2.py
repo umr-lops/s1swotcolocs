@@ -570,36 +570,6 @@ def s1_scene_polygon(row: pd.Series, swot_lon_max=179):
     return poly
 
 
-def view_s1_scene_polygon(ds_wv, swot_lon_max=179):
-    """Build a Polygon from a S1-WV dataset (for debugging/visualisation).
-
-    Similar to s1_scene_polygon but operates on a dataset's polygon variable
-    directly. Assumes a single scene in the dataset.
-
-    Args:
-        ds_wv: xarray Dataset containing 'polygon' variable.
-        swot_lon_max (float): Maximum longitude of the SWOT footprint
-            in [0, 360] space.
-
-    Returns:
-        Polygon: Valid Shapely polygon.
-    """
-    poly = ds_wv["polygon"].values
-    lons, lats = poly[0, :], poly[1, :]
-    if swot_lon_max >= 180:
-        lons = (lons + 360) % 360
-        if np.ptp(lons) > 180:
-            lons[lons < 180] += 360
-    else:
-        if np.ptp(lons) > 180:
-            lons[lons > 0] -= 360
-
-    wv_poly = Polygon(zip(lons, lats))
-    if not wv_poly.is_valid:
-        wv_poly = wv_poly.buffer(0)
-    return wv_poly
-
-
 # ═════════════════════════════════════════════════════════════════════════════
 # Overlap percentage
 # ═════════════════════════════════════════════════════════════════════════════
@@ -627,7 +597,6 @@ def overlap_pct(intersection, wv_poly: Polygon) -> float:
 # Collocation core
 # ═════════════════════════════════════════════════════════════════════════════
 
-Matu_thoughts = True
 
 
 def collocate_swot_file(
@@ -662,12 +631,12 @@ def collocate_swot_file(
     swot_t0_fn, swot_t1_fn = parse_swot_filename_times(swot_path.name)
     if swot_t0_fn is None:
         log.warning("Cannot parse time from SWOT filename: %s — skipping", swot_path.name)
-        return matchups
+        return matchups, debug_image_csv_suffix
 
     if np.abs(swot_t1_fn - swot_t0_fn) < timedelta(seconds=0.05):
         log.warning(f"SWOT t_start ({swot_t0_fn}) equals SWOT t_end ({swot_t1_fn}). Beginning of SCIENCE phase ?"
                     "\n %s - skipping", swot_path.name)
-        return matchups
+        return matchups, debug_image_csv_suffix
 
     log.info("Processing SWOT: %s", swot_path.name)
 
@@ -675,7 +644,7 @@ def collocate_swot_file(
     s1_files = find_s1_wv_files_for_swot(swot_t0_fn, swot_t1_fn, s1_root)
     if not s1_files:
         log.info("  No S1-WV files found for this SWOT pass — skipping")
-        return matchups
+        return matchups, debug_image_csv_suffix
 
     # ── 3. Load S1-WV data (small, ~3 MB each) ────────────────────────────
     df_wv_parts = []
@@ -686,7 +655,7 @@ def collocate_swot_file(
     log.info("  %d S1-WV scenes to test", len(df_wv))
 
     if df_wv.empty:
-        return matchups
+        return matchups, debug_image_csv_suffix
 
     # ── 4. Open SWOT lazily; read only global attrs (header only) ─────────
     ds_swot = xr.open_dataset(swot_path)
@@ -697,19 +666,16 @@ def collocate_swot_file(
     time_margin = pd.Timedelta(minutes=max_time_diff_min)
 
     # ── 5. Attribute-level bbox pre-filter ────────────────────────────────
-    # (skipped because S1 daily files cover the whole Earth – see Matu_thoughts)
-    if Matu_thoughts:
-        pass
-    else:
-        any_bbox_ok = _bbox_overlaps(
-            df_wv["lon"].min(), df_wv["lon"].max(),
-            df_wv["lat"].min(), df_wv["lat"].max(),
-            swot_lon_min, swot_lon_max, swot_lat_min, swot_lat_max,
-        )
-        if not any_bbox_ok:
-            ds_swot.close()
-            log.info("  Skipped: no S1-WV scenes overlap SWOT bbox")
-            return matchups
+
+    any_bbox_ok = _bbox_overlaps(
+        df_wv["lon"].min(), df_wv["lon"].max(),
+        df_wv["lat"].min(), df_wv["lat"].max(),
+        swot_lon_min, swot_lon_max, swot_lat_min, swot_lat_max,
+    )
+    if not any_bbox_ok:
+        ds_swot.close()
+        log.info("  Skipped: no S1-WV scenes overlap SWOT bbox")
+        return matchups, debug_image_csv_suffix
 
     # ── 6. Load only swath-edge pixels ────────────────────────────────────
     log.info("  Loading SWOT edge pixels …")
@@ -720,7 +686,7 @@ def collocate_swot_file(
         swot_poly = swot_footprint_polygon(edges)
     except Exception as exc:
         log.warning("  Could not build SWOT polygon: %s", exc)
-        return matchups
+        return matchups, debug_image_csv_suffix
 
     swot_times = pd.to_datetime(edges["times"], utc=True)
 
