@@ -12,3 +12,7 @@ ipykernel
 # The notebooks executed by nbsphinx import these for plotting / maps.
 matplotlib
 cartopy
+# The docs also document the interactive visualisation helpers
+# (s1swotcolocs.illustrate_coloc_swh_file), which are optional at runtime.
+geoviews
+hvplot

@@ -23,9 +23,7 @@ dependencies = [
   "h5py",
   "netcdf4",
   "alphashape",
-  "geoviews",
   "paramiko",
-  "hvplot",
   "s1ifr",
   "pystac",
   "pystac-client",
@@ -41,6 +39,13 @@ changelog = "https://github.com/agrouaze/s1swotcolocs/blob/master/changelog.md"
 homepage = "https://github.com/agrouaze/s1swotcolocs"
 
 [project.optional-dependencies]
+# Interactive plotting (used only by illustrate_coloc_swh_file.py and the
+# documentation notebooks). Not needed for the production co-location
+# entrypoints; keep the Apptainer image lean by not installing it there.
+plot = [
+  "geoviews",
+  "hvplot",
+]
 
 
 [build-system]

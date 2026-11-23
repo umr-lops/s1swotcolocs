@@ -1,0 +1,77 @@
+# Apptainer definition for s1swotcolocs using Pixi (prefix-dev) instead of
+# micromamba. Pixi gives a locked, reproducible conda-forge environment from
+# pixi.toml + pixi.lock, and the static musl binary is removed after the
+# build, so it does not weigh on the runtime image.
+#
+# Build (rootless apptainer 1.4+):
+#   apptainer build --force s1swotcolocs.sif apptainer-s1swotcolocs-pixi.def
+#
+# No build args are needed: the environment is fully locked (pixi.toml +
+# pixi.lock) and s1ifr is resolved from public PyPI (see pypi-dependencies in
+# pixi.toml).
+
+Bootstrap: docker
+From: ubuntu:22.04
+
+%files
+    pixi.toml /opt/app_src/pixi.toml
+    pixi.lock /opt/app_src/pixi.lock
+    . /opt/app_src
+
+%environment
+    # Make the environment scripts available at runtime. The pixi
+    # environment lives in .pixi/envs/default inside the workspace
+    # (/opt/app_src).
+    export ENV_NAME=default
+    export PATH=/opt/app_src/.pixi/envs/default/bin:$PATH
+    export PYTHONUNBUFFERED=1
+
+%post
+    export PIXI_HOME=/opt/pixi_home
+    export PIXI_VERSION=0.84.2
+
+    # 1. System dependencies (no compiler needed: pure-python local packages,
+    #    binary wheels everywhere else)
+    apt-get update && apt-get install -y --no-install-recommends \
+        curl ca-certificates libglib2.0-0 libxext6 libsm6 libxrender1
+
+    # 2. Pixi (static musl binary, pinned version)
+    mkdir -p /usr/local/bin
+    curl -sL https://github.com/prefix-dev/pixi/releases/download/v${PIXI_VERSION}/pixi-x86_64-unknown-linux-musl.tar.gz | \
+        tar -xz -C /usr/local/bin/
+
+    # 3. Locked conda-forge environment (pixi.toml + pixi.lock)
+    cd /opt/app_src
+    pixi install --frozen
+
+    # 4. Install the local application from source (generates the console
+    #    scripts from pyproject.toml). Core dependencies only: the optional
+    #    "plot" extra (geoviews/hvplot) is deliberately NOT installed here.
+    /opt/app_src/.pixi/envs/default/bin/pip install . --no-cache-dir
+
+    # 5. Final permissions
+    chmod -R 755 /opt/app_src
+
+    # 6. Cleanup: drop the pixi binary, its package cache and build tools
+    rm -f /usr/local/bin/pixi
+    rm -rf /opt/pixi_home
+    apt-get purge -y curl
+    apt-get autoremove -y
+    apt-get clean
+    rm -rf /var/lib/apt/lists/*
+
+%runscript
+    # Pass-through: with arguments, run the command as-is (the env bin dir is
+    # on PATH, so the s1swotcolocs entrypoints are found); without, start a
+    # Python interpreter.
+    if [ $# -eq 0 ]; then
+        echo "No command provided. Starting Python interpreter..."
+        exec python
+    else
+        exec "$@"
+    fi
+
+%test
+    # Check that one of the console scripts is actually on the PATH.
+    which coloc_SWOT_L3_with_S1_CDSE_TOPS_sequentiel
+    python -c "import s1swotcolocs, cdsodatacli, s1ifr, h5py; print('imports OK')"
