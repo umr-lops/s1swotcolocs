@@ -11,6 +11,13 @@ slice_swot:
   - The guard block for degenerate / too-few-point geometries is tightened:
     is_nearly_collinear() is also called before alphashape so that a collinear
     set never reaches the triangulation.
+  - Point sets that straddle the antimeridian are now split into their
+    eastern and western contiguous halves before shaping (fix for GH issue
+    #20 "SWOT polygons corrupted": a swath crossing 180E/W was shaped as a
+    ~360-degree "banana" polygon covering half the ocean, and the fragments
+    left over after the land mask were saved as SWOT polygons far from the
+    real swath, producing bogus colocations). New counter:
+    "segment_split_at_antimeridian".
 
 treat_a_clean_piece_of_swot_orbit:
   - The stray breakpoint() that was left in production code after the NaT
@@ -20,8 +27,6 @@ treat_one_day_wrapper:
   - The bare "raise ValueError" inside the do_cdse_query loop has been
     removed. It was crashing the entire day when a single GDF query failed.
     The error is now logged and counted, the loop continues.
-
-No other logic has been changed.
 """
 
 import argparse
@@ -125,6 +130,40 @@ def is_nearly_collinear(points: np.ndarray, threshold: float = 0.05) -> bool:
     if sv[0] == 0:
         return True
     return (sv[1] / sv[0]) < threshold
+
+
+def split_points_at_antimeridian(points: np.ndarray) -> list[np.ndarray]:
+    """
+    Split a lon/lat point set at the antimeridian when it straddles it.
+
+    When a SWOT swath crosses 180E/W, points exist on both sides of the
+    antimeridian within a single segment. Shaping the whole set in Cartesian
+    lon/lat space (alphashape / convex_hull) connects the two sides with
+    ~360-degree edges, producing a "banana" polygon covering the whole
+    latitude band between them (see GH issue #20). The fragments left over
+    after the land mask are then saved as SWOT polygons far from the real
+    swath.
+
+    Returns a list of point arrays, each confined to one side of the
+    antimeridian:
+      - a single-element list [points] when the set does not straddle
+        (lon span < 180 degrees), i.e. nothing to split;
+      - one or two subsets (eastern side lon >= 0, western side lon < 0),
+        keeping only halves that are shapable (>= 4 points and lon span
+        < 180 degrees).
+    """
+    lons = points[:, 0]
+    if (lons.max() - lons.min()) < 180.0:
+        return [points]
+
+    eastern = points[lons >= 0.0]
+    western = points[lons < 0.0]
+    subsets = [
+        part
+        for part in (eastern, western)
+        if len(part) >= 4 and (part[:, 0].max() - part[:, 0].min()) < 180.0
+    ]
+    return subsets if subsets else [points]
 
 
 # ---------------------------------------------------------------------------
@@ -283,6 +322,9 @@ def slice_swot(
       - Both fix_polygon() calls are now routed through _safe_fix_polygon()
         which catches ValueError (linearring) in addition to AssertionError.
       - is_nearly_collinear() guard added alongside is_degenerate_swath().
+      - Points of a segment crossing the antimeridian are split into their
+        eastern and western halves before shaping (see
+        split_points_at_antimeridian, fix for GH issue #20).
     """
     sub_gdf = []
     delta_t_max = np.timedelta64(delta_hours, "h")
@@ -299,56 +341,116 @@ def slice_swot(
         cpt["too_few_points_skipped"] += 1
         return sub_gdf, cpt
 
-    multi_point = MultiPoint(points)
-    gdfswot = gpd.GeoDataFrame(geometry=list(multi_point.geoms))
-
-    # ── FIX: also check collinearity before alphashape, not just aspect ratio ──
-    if is_degenerate_swath(points, bbox_ratio_threshold=0.5) or is_nearly_collinear(
-        points
-    ):
-        app_logger.debug(
-            "Degenerate swath shape detected (narrow or collinear) "
-            "— falling back to convex_hull."
-        )
-        cpt["degenerate_collinear_fallback"] += 1
-        alpha_shape_swot = MultiPoint(points).convex_hull
-    else:
-        alpha_shape_swot, cpt = compute_alphashape_safe(
-            gdfswot, points, tolerance_simplification, cpt
+    # ── FIX (GH #20): a segment whose swath crosses the antimeridian must
+    # not be shaped as a whole — the hull/alphashape would connect the two
+    # sides of 180E/W with ~360-degree edges. Shape each contiguous half
+    # separately. ──
+    point_sets = split_points_at_antimeridian(points)
+    if len(point_sets) > 1:
+        cpt["segment_split_at_antimeridian"] += 1
+        app_logger.info(
+            "SWOT segment %i-%i crosses the antimeridian: shaping %i "
+            "contiguous halves separately.",
+            idxstart,
+            idxstop,
+            len(point_sets),
         )
 
     land_path = geodatasets.get_path("naturalearth.land")
     land = gpd.read_file(land_path)
     land_union = land.union_all()
 
-    ocean_part = alpha_shape_swot.difference(land_union)
-    tolerance = tolerance_simplification
-    simplified_polygon = ocean_part.simplify(tolerance)
-    simplified_polygon = simplified_polygon.buffer(0)
+    for pts in point_sets:
+        multi_point = MultiPoint(pts)
+        gdfswot = gpd.GeoDataFrame(geometry=list(multi_point.geoms))
 
-    if simplified_polygon.is_empty:
-        app_logger.debug("one empty polygon")
-        cpt["empty_polygon"] += 1
-        return sub_gdf, cpt
+        # ── FIX: also check collinearity before alphashape, not just aspect ratio ──
+        if is_degenerate_swath(pts, bbox_ratio_threshold=0.5) or is_nearly_collinear(
+            pts
+        ):
+            app_logger.debug(
+                "Degenerate swath shape detected (narrow or collinear) "
+                "— falling back to convex_hull."
+            )
+            cpt["degenerate_collinear_fallback"] += 1
+            alpha_shape_swot = MultiPoint(pts).convex_hull
+        else:
+            alpha_shape_swot, cpt = compute_alphashape_safe(
+                gdfswot, pts, tolerance_simplification, cpt
+            )
 
-    if isinstance(simplified_polygon, MultiPolygon):
-        app_logger.debug("Nb parts: %i", len(simplified_polygon.geoms))
-        for iip, partswot in enumerate(simplified_polygon.geoms):
+        ocean_part = alpha_shape_swot.difference(land_union)
+        tolerance = tolerance_simplification
+        simplified_polygon = ocean_part.simplify(tolerance)
+        simplified_polygon = simplified_polygon.buffer(0)
 
+        if simplified_polygon.is_empty:
+            app_logger.debug("one empty polygon")
+            cpt["empty_polygon"] += 1
+            continue
+
+        if isinstance(simplified_polygon, MultiPolygon):
+            app_logger.debug("Nb parts: %i", len(simplified_polygon.geoms))
+            for iip, partswot in enumerate(simplified_polygon.geoms):
+
+                # ── FIX: _safe_fix_polygon catches ValueError + AssertionError ──
+                subpartswot, ok = _safe_fix_polygon(
+                    partswot, cpt, context=f"MultiPolygon part {iip}"
+                )
+                if not ok:
+                    continue
+
+                if isinstance(subpartswot, MultiPolygon):
+                    cpt["segment_interupted_by_land_and_antimeridian"] += 1
+                    for yyp, subsubpartswot in enumerate(subpartswot.geoms):
+                        is_ok_extents = check_longitude_smaller_than_latitude_extent(
+                            subsubpartswot
+                        )
+                        if subsubpartswot.area < max_area_size and is_ok_extents:
+                            gdf, cpt = treat_a_clean_piece_of_swot_orbit(
+                                subsubpartswot,
+                                points,
+                                swotsub,
+                                mode,
+                                producttype,
+                                delta_t_max,
+                                cpt=cpt,
+                            )
+                            sub_gdf.append(gdf)
+                        else:
+                            cpt["segment_with_area_too_large"] += 1
+                else:
+                    cpt["segment_interupted_by_land_only"] += 1
+                    if subpartswot.area < max_area_size:
+                        gdf, cpt = treat_a_clean_piece_of_swot_orbit(
+                            subpartswot,
+                            points,
+                            swotsub,
+                            mode,
+                            producttype,
+                            delta_t_max,
+                            cpt=cpt,
+                        )
+                        sub_gdf.append(gdf)
+                    else:
+                        cpt["segment_with_area_too_large"] += 1
+
+        else:
+            # Single contiguous polygon over ocean
             # ── FIX: _safe_fix_polygon catches ValueError + AssertionError ──
             subpartswot, ok = _safe_fix_polygon(
-                partswot, cpt, context=f"MultiPolygon part {iip}"
+                simplified_polygon,
+                cpt,
+                context="single polygon",
+                fix_winding=True,
             )
             if not ok:
                 continue
 
             if isinstance(subpartswot, MultiPolygon):
-                cpt["segment_interupted_by_land_and_antimeridian"] += 1
+                cpt["segment_continuous_with_antimeridian"] += 1
                 for yyp, subsubpartswot in enumerate(subpartswot.geoms):
-                    is_ok_extents = check_longitude_smaller_than_latitude_extent(
-                        subsubpartswot
-                    )
-                    if subsubpartswot.area < max_area_size and is_ok_extents:
+                    if subsubpartswot.area < max_area_size:
                         gdf, cpt = treat_a_clean_piece_of_swot_orbit(
                             subsubpartswot,
                             points,
@@ -362,7 +464,7 @@ def slice_swot(
                     else:
                         cpt["segment_with_area_too_large"] += 1
             else:
-                cpt["segment_interupted_by_land_only"] += 1
+                cpt["segment_continuous_without_antimeridian"] += 1
                 if subpartswot.area < max_area_size:
                     gdf, cpt = treat_a_clean_piece_of_swot_orbit(
                         subpartswot,
@@ -376,50 +478,6 @@ def slice_swot(
                     sub_gdf.append(gdf)
                 else:
                     cpt["segment_with_area_too_large"] += 1
-
-    else:
-        # Single contiguous polygon over ocean
-        # ── FIX: _safe_fix_polygon catches ValueError + AssertionError ──
-        subpartswot, ok = _safe_fix_polygon(
-            simplified_polygon,
-            cpt,
-            context="single polygon",
-            fix_winding=True,
-        )
-        if not ok:
-            return sub_gdf, cpt
-
-        if isinstance(subpartswot, MultiPolygon):
-            cpt["segment_continuous_with_antimeridian"] += 1
-            for yyp, subsubpartswot in enumerate(subpartswot.geoms):
-                if subsubpartswot.area < max_area_size:
-                    gdf, cpt = treat_a_clean_piece_of_swot_orbit(
-                        subsubpartswot,
-                        points,
-                        swotsub,
-                        mode,
-                        producttype,
-                        delta_t_max,
-                        cpt=cpt,
-                    )
-                    sub_gdf.append(gdf)
-                else:
-                    cpt["segment_with_area_too_large"] += 1
-        else:
-            cpt["segment_continuous_without_antimeridian"] += 1
-            if subpartswot.area < max_area_size:
-                gdf, cpt = treat_a_clean_piece_of_swot_orbit(
-                    subpartswot,
-                    points,
-                    swotsub,
-                    mode,
-                    producttype,
-                    delta_t_max,
-                    cpt=cpt,
-                )
-                sub_gdf.append(gdf)
-            else:
-                cpt["segment_with_area_too_large"] += 1
 
     return sub_gdf, cpt
 
