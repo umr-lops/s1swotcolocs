@@ -7,8 +7,7 @@ import subprocess
 import sys
 from datetime import date, datetime, timedelta
 
-from yaml import CLoader as Loader
-from yaml import load
+from yaml import safe_load
 
 
 def setup_logging():
@@ -117,7 +116,7 @@ def main():
     logging.info("Starting the S1/SWOT collocation wrapper script.")
     logging.info("load the config file from :%s", args.confpath)
     stream = open(args.confpath)
-    conf = load(stream, Loader=Loader)
+    conf = safe_load(stream)
     # --- Configuration ---
     DOCKER_BINARY_PATH = conf["DOCKER_BINARY_PATH"]
     DOCKER_IMAGE = conf["DOCKER_IMAGE"]

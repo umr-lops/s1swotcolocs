@@ -8,8 +8,7 @@ import xarray as xr
 from shapely.geometry import Polygon
 from shapely.ops import unary_union
 from shapely.validation import make_valid
-from yaml import CLoader as Loader
-from yaml import load
+from yaml import safe_load
 
 logger = logging.getLogger("s1swotcolocs.get_config_info")
 logger.addHandler(logging.NullHandler())
@@ -78,7 +77,7 @@ def overlap_pct(intersection, wv_poly: Polygon) -> float:
 def get_conf_content(conf_path):
     # stream = open(get_config_file_path(), "r")
     stream = open(conf_path)
-    conf = load(stream, Loader=Loader)
+    conf = safe_load(stream)
     return conf
 
 
