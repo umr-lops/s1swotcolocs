@@ -1,6 +1,6 @@
 import unittest
 from collections import defaultdict
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import geopandas as gpd
 import numpy as np
@@ -77,6 +77,13 @@ class TestColocPersistenceAndWrapper(unittest.TestCase):
         self.assertIsNone(res)
         self.assertFalse(mock_fetch.called)
 
+    @patch("cdsodatacli.query.fetch_data")
+    def test_do_cdse_query_empty_gdf(self, mock_fetch):
+        """An empty GeoDataFrame (no "start_datetime" column) must not crash."""
+        res = do_cdse_query(gpd.GeoDataFrame())
+        self.assertIsNone(res)
+        self.assertFalse(mock_fetch.called)
+
     def test_compute_alphashape_fallback(self):
         """Test that alphashape falls back to convex_hull on error."""
         # Create a tiny point set that usually causes issues
@@ -111,7 +118,19 @@ class TestColocPersistenceAndWrapper(unittest.TestCase):
         mock_glob.return_value = ["file1.nc"]
 
         # 2. Simulate 2 pieces of SWOT orbit found in the file
-        mock_geoloc.return_value = ([MagicMock(), MagicMock()], defaultdict(int))
+        #    (real GeoDataFrames: len(gdf) > 0 so they survive the
+        #    empty-gdf filter in treat_one_day_wrapper)
+        gdf_a = gpd.GeoDataFrame(
+            {"id_query": ["file.nc 2025-10-17T15:12:10"],
+             "start_datetime": [pd.Timestamp("2025-10-17 15:00")],
+             "end_datetime": [pd.Timestamp("2025-10-17 15:20")]}
+        )
+        gdf_b = gpd.GeoDataFrame(
+            {"id_query": ["file.nc 2025-10-17T16:00:00"],
+             "start_datetime": [pd.Timestamp("2025-10-17 15:48")],
+             "end_datetime": [pd.Timestamp("2025-10-17 16:12")]}
+        )
+        mock_geoloc.return_value = ([gdf_a, gdf_b], defaultdict(int))
 
         # 3. Simulate CDSE query behavior: first fails, second succeeds
         mock_query.side_effect = [
@@ -140,6 +159,52 @@ class TestColocPersistenceAndWrapper(unittest.TestCase):
         self.assertEqual(cpt_result["sentinel1_product_matching"], 1)
         # Verify that save_meta_coloc_output was actually called
         self.assertTrue(mock_save.called)
+
+    @patch("s1swotcolocs.coloc_SWOT_L3_with_S1_CDSE_TOPS.get_conf_content")
+    @patch("s1swotcolocs.coloc_SWOT_L3_with_S1_CDSE_TOPS.glob.glob")
+    @patch("s1swotcolocs.coloc_SWOT_L3_with_S1_CDSE_TOPS.get_swot_geoloc")
+    @patch("s1swotcolocs.coloc_SWOT_L3_with_S1_CDSE_TOPS.do_cdse_query")
+    @patch("s1swotcolocs.coloc_SWOT_L3_with_S1_CDSE_TOPS.save_meta_coloc_output")
+    def test_treat_one_day_wrapper_drops_empty_gdfs(
+        self, mock_save, mock_query, mock_geoloc, mock_glob, mock_conf
+    ):
+        """Empty GeoDataFrames (e.g. NaT-time pieces) must be dropped, not
+        sent to do_cdse_query where a KeyError would skip the whole day."""
+        mock_conf.return_value = {
+            "SWOT_L2_AVISO_DIR": "/tmp",
+            "CACHE_CDSE": "/tmp",
+            "DELTA_HOURS": 6,
+            "MAX_AREA_SIZE": 100,
+            "TOLERANCE_SIMPLIFICATION": 0.1,
+        }
+        mock_glob.return_value = ["file1.nc"]
+
+        valid_gdf = gpd.GeoDataFrame(
+            {"id_query": ["file.nc 2025-10-17T15:12:10"],
+             "start_datetime": [pd.Timestamp("2025-10-17 15:00")],
+             "end_datetime": [pd.Timestamp("2025-10-17 15:20")]}
+        )
+        # One valid piece + one empty (as returned for NaT-time pieces)
+        mock_geoloc.return_value = ([valid_gdf, gpd.GeoDataFrame()], defaultdict(int))
+        mock_query.return_value = pd.DataFrame({"Name": ["S1"]})
+
+        def side_effect_action(*args, **kwargs):
+            if "cpt" in kwargs:
+                return kwargs["cpt"]
+            return args[4]
+
+        mock_save.side_effect = side_effect_action
+
+        cpt_result = treat_one_day_wrapper(
+            "20251017", "/tmp/out", "IW", "fake_conf.yml"
+        )
+
+        # The empty gdf was counted and never queried
+        self.assertEqual(cpt_result["empty_gdf_dropped"], 1)
+        self.assertEqual(mock_query.call_count, 1)
+        queried = mock_query.call_args.args[0]
+        self.assertEqual(len(queried), 1)
+        self.assertEqual(cpt_result["sentinel1_product_matching"], 1)
 
 
 if __name__ == "__main__":

@@ -549,6 +549,9 @@ def get_swot_geoloc(
 
 
 def do_cdse_query(gdf, mini_ocean=10, cache_dir=None):
+    if gdf is None or len(gdf) == 0:
+        app_logger.warning("Skipping CDSE query: empty GeoDataFrame")
+        return None
     if pd.isnull(gdf["start_datetime"].iloc[0]) or pd.isnull(
         gdf["end_datetime"].iloc[0]
     ):
@@ -789,7 +792,19 @@ def treat_one_day_wrapper(
             cpt=cpt,
             tolerance_simplification=conf["TOLERANCE_SIMPLIFICATION"],
         )
-        SWOTgdfs += swot_distinct_gdfs_list
+        # ── FIX: drop empty GeoDataFrames (e.g. NaT-time pieces returned by
+        # treat_a_clean_piece_of_swot_orbit): an empty gdf crashes
+        # do_cdse_query with a KeyError on "start_datetime", which is not
+        # caught by the per-gdf ValueError handler and skips the whole day.
+        n_empty = sum(1 for g in swot_distinct_gdfs_list if len(g) == 0)
+        if n_empty:
+            cpt["empty_gdf_dropped"] += n_empty
+            app_logger.warning(
+                "Dropping %i empty GeoDataFrame(s) from %s",
+                n_empty,
+                os.path.basename(oneswotfile),
+            )
+        SWOTgdfs += [g for g in swot_distinct_gdfs_list if len(g) > 0]
 
     app_logger.info("GeoDataFrames prepared for CDSE queries: %s", cpt)
     app_logger.info("nb GeoDataFrames: %i", len(SWOTgdfs))
