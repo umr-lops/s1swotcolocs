@@ -6,7 +6,7 @@ ARG MAMBA_VERSION=1.5.6
 ENV MAMBA_ROOT_PREFIX=/opt/conda
 
 RUN apt-get update && apt-get install -y curl bzip2 ca-certificates && \
-    curl -L https://micromamba.snakepit.net/api/micromamba/linux-64/${MAMBA_VERSION} | \
+    curl -L https://micro.mamba.pm/api/micromamba/linux-64/${MAMBA_VERSION} | \
     tar -xvj --strip-components=1 -C /usr/local/bin/ bin/micromamba && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
