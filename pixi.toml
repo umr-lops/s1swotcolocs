@@ -1,0 +1,44 @@
+# Pixi workspace for the s1swotcolocs runtime environment.
+#
+# Used by apptainer-s1swotcolocs-pixi.def to build the production Apptainer
+# image (a locked, reproducible conda-forge environment without the optional
+# plotting stack). For local development you can also run:
+#
+#     pixi run pytest
+#
+# The s1swotcolocs package itself is installed from source with pip at image
+# build time (see the .def), not through pixi.
+
+[workspace]
+name = "s1swotcolocs"
+version = "0.0.0"
+channels = ["conda-forge"]
+platforms = ["linux-64"]
+
+[tasks]
+test = "pytest -q"
+
+[dependencies]
+python = "3.12.*"
+numpy = "*"
+pandas = "*"
+xarray = "*"
+antimeridian = "*"
+shapely = "*"
+tqdm = "*"
+geopandas = "*"
+geodatasets = "*"
+cdsodatacli = "*"
+h5netcdf = "*"
+h5py = "*"
+netcdf4 = "*"
+paramiko = "*"
+alphashape = "*"
+pystac = "*"
+pystac-client = "*"
+pip = "*"
+
+# s1ifr is a pypi dependency (also published on PyPI, so no private index is
+# needed to build the image).
+[pypi-dependencies]
+s1ifr = "*"
