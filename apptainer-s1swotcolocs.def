@@ -30,7 +30,7 @@ From: ubuntu:22.04
 
     # 2. Micromamba
     mkdir -p /usr/local/bin
-    curl -L https://micromamba.snakepit.net/api/micromamba/linux-64/${MAMBA_VERSION} | \
+    curl -L https://micro.mamba.pm/api/micromamba/linux-64/${MAMBA_VERSION} | \
     tar -xvj --strip-components=1 -C /usr/local/bin/ bin/micromamba
 
     # 3. Environment creation
