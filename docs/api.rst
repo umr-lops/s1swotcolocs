@@ -46,11 +46,6 @@ IW/EW Collocation
     :undoc-members:
     :show-inheritance:
 
-.. automodule:: s1swotcolocs.coloc_SWOT_L3_with_S1_CDSE_TOPS_sequential_wrapper
-    :members:
-    :undoc-members:
-    :show-inheritance:
-
 WV‑KaRIn Matchups
 -----------------
 

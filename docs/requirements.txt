@@ -1,0 +1,14 @@
+# Documentation build dependencies for Read the Docs.
+# The project's own runtime dependencies are installed separately via
+# `pip install .` (see .readthedocs.yaml), so only the docs-specific extras
+# are listed here.
+
+sphinx==7.2.6
+sphinx-rtd-theme
+nbsphinx
+jupyter-sphinx
+ipykernel
+
+# The notebooks executed by nbsphinx import these for plotting / maps.
+matplotlib
+cartopy
