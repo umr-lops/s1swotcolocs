@@ -548,7 +548,15 @@ def get_swot_geoloc(
     return allgdfs_swot, cpt
 
 
-def do_cdse_query(gdf, mini_ocean=10, cache_dir=None):
+def do_cdse_query(gdf, mini_ocean=10, cache_dir=None, metadata_source="live", parquet_dir=None):
+    """Query S1 product metadata for one SWOT query gdf.
+
+    :param metadata_source: "live" (CDSE OData API, default — unchanged
+        behaviour) or "parquet" (local daily parquet dumps on Ifremer disk,
+        see ``s1swotcolocs.cdse_parquet_query``).
+    :param parquet_dir: directory of the daily ``s1_YYYY-MM-DD.parquet``
+        files; required when ``metadata_source="parquet"``.
+    """
     if gdf is None or len(gdf) == 0:
         app_logger.warning("Skipping CDSE query: empty GeoDataFrame")
         return None
@@ -561,12 +569,21 @@ def do_cdse_query(gdf, mini_ocean=10, cache_dir=None):
         )
         return None
 
-    collected_data_norm = cdsodatacli.query.fetch_data(
-        gdf,
-        min_sea_percent=mini_ocean,
-        timedelta_slice=datetime.timedelta(days=4),
-        cache_dir=None,
-    )
+    if metadata_source == "parquet":
+        from s1swotcolocs.cdse_parquet_query import fetch_data_from_parquet
+
+        collected_data_norm = fetch_data_from_parquet(
+            gdf,
+            parquet_dir=parquet_dir,
+            min_sea_percent=mini_ocean,
+        )
+    else:
+        collected_data_norm = cdsodatacli.query.fetch_data(
+            gdf,
+            min_sea_percent=mini_ocean,
+            timedelta_slice=datetime.timedelta(days=4),
+            cache_dir=None,
+        )
     return collected_data_norm
 
 
@@ -754,6 +771,27 @@ def treat_one_day_wrapper(
     conf = get_conf_content(confpath)
     dswot = conf["SWOT_L2_AVISO_DIR"]
     CACHE_CDSE = conf["CACHE_CDSE"]
+    # S1 metadata source for the CDSE query: "live" (CDSE OData API, default,
+    # backwards compatible) or "parquet" (daily parquet dumps on Ifremer disk).
+    CDSE_METADATA_SOURCE = str(conf.get("CDSE_METADATA_SOURCE", "live")).lower()
+    CDSE_PARQUET_DIR = conf.get("CDSE_PARQUET_DIR")
+    if CDSE_METADATA_SOURCE not in ("live", "parquet"):
+        raise ValueError(
+            "CDSE_METADATA_SOURCE must be 'live' or 'parquet', got: "
+            f"{CDSE_METADATA_SOURCE!r}"
+        )
+    if CDSE_METADATA_SOURCE == "parquet" and not (
+        CDSE_PARQUET_DIR and os.path.isdir(CDSE_PARQUET_DIR)
+    ):
+        raise ValueError(
+            "CDSE_METADATA_SOURCE is 'parquet' but CDSE_PARQUET_DIR is missing "
+            f"or not an existing directory: {CDSE_PARQUET_DIR!r}"
+        )
+    app_logger.info(
+        "S1 metadata source for CDSE queries: %s%s",
+        CDSE_METADATA_SOURCE,
+        f" ({CDSE_PARQUET_DIR})" if CDSE_METADATA_SOURCE == "parquet" else "",
+    )
 
     dd = datetime.datetime.strptime(day2treat, "%Y%m%d")
     app_logger.info("treat day : %s", dd)
@@ -813,7 +851,13 @@ def treat_one_day_wrapper(
     for ii in tqdm(range(len(SWOTgdfs)), disable=disable_tqdm):
         gdf = SWOTgdfs[ii]
         try:
-            res = do_cdse_query(gdf, mini_ocean=10, cache_dir=CACHE_CDSE)
+            res = do_cdse_query(
+                gdf,
+                mini_ocean=10,
+                cache_dir=CACHE_CDSE,
+                metadata_source=CDSE_METADATA_SOURCE,
+                parquet_dir=CDSE_PARQUET_DIR,
+            )
             if res is not None:
                 cpt["sentinel1_product_matching"] += len(res)
         except ValueError:
